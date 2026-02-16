@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Route Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 0;
+        }
+
+        .sidebar {
+            background: #f8f9fa;
+            padding: 30px;
+            border-right: 2px solid #e0e0e0;
+        }
+
+        .map-container {
+            height: 600px;
+            position: relative;
+        }
+
+        #map {
+            width: 100%;
+            height: 100%;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 0.95em;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .input-group small {
+            display: block;
+            color: #666;
+            margin-top: 5px;
+            font-size: 0.85em;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            border: 2px solid #e0e0e0;
+        }
+
+        .results h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .result-item {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+
+        .result-item h4 {
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+
+        .result-item p {
+            color: #555;
+            margin: 5px 0;
+            font-size: 0.95em;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .error.active {
+            display: block;
+        }
+
+        .map-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+
+        .map-controls button {
+            display: block;
+            width: 100%;
+            padding: 8px 15px;
+            margin: 5px 0;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .map-controls button:hover {
+            background: #5568d3;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                border-right: none;
+                border-bottom: 2px solid #e0e0e0;
+            }
+
+            .map-container {
+                height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="content">
+            <div class="sidebar">
+                <div class="input-group">
+                    <label for="startLat">Start Latitude</label>
+                    <input type="text" id="startLat" placeholder="16.42624764730844">
+                    <small>Click on map or enter manually</small>
+                </div>
+
+                <div class="input-group">
+                    <label for="startLon">Start Longitude</label>
+                    <input type="text" id="startLon" placeholder="120.59789698832675">
+                </div>
+
+                <div class="input-group">
+                    <label for="endLat">End Latitude</label>
+                    <input type="text" id="endLat" placeholder="16.42338973567086">
+                    <small>Click on map or enter manually</small>
+                </div>
+
+                <div class="input-group">
+                    <label for="endLon">End Longitude</label>
+                    <input type="text" id="endLon" placeholder="120.60298773090588">
+                </div>
+
+                <button class="btn" id="calculateBtn">Calculate Route</button>
+                <button class="btn" id="clearBtn" style="background: #dc3545; margin-top: 10px;">Clear Map</button>
+
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Calculating route...</p>
+                </div>
+
+                <div class="error" id="error"></div>
+
+                <div class="results" id="results" style="display: none;">
+                    <h3>Results</h3>
+                    <div id="resultsContent"></div>
+                </div>
+            </div>
+
+            <div class="map-container">
+                <div id="map"></div>
+                <div class="map-controls">
+                    <button onclick="setMode('start')">📍 Set Start</button>
+                    <button onclick="setMode('end')">🎯 Set End</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let map;
+        let startMarker;
+        let endMarker;
+        let routeLine;
+        let clickMode = null; // 'start' or 'end'
+
+        // Initialize Google Map
+        function initMap() {
+            // Default center (Baguio City)
+            const defaultCenter = { lat: 16.4023, lng: 120.5960 };
+
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: defaultCenter,
+                zoom: 14,
+                mapTypeId: 'roadmap'
+            });
+
+            // Add click listener to map
+            map.addListener('click', (e) => {
+                if (clickMode === 'start') {
+                    setStartLocation(e.latLng.lat(), e.latLng.lng());
+                } else if (clickMode === 'end') {
+                    setEndLocation(e.latLng.lat(), e.latLng.lng());
+                }
+            });
+        }
+
+        function setMode(mode) {
+            clickMode = mode;
+            const buttons = document.querySelectorAll('.map-controls button');
+            buttons.forEach(btn => btn.style.opacity = '1');
+            event.target.style.opacity = '0.7';
+        }
+
+        function setStartLocation(lat, lng) {
+            document.getElementById('startLat').value = lat.toFixed(8);
+            document.getElementById('startLon').value = lng.toFixed(8);
+
+            if (startMarker) {
+                startMarker.setMap(null);
+            }
+
+            startMarker = new google.maps.Marker({
+                position: { lat, lng },
+                map: map,
+                title: 'Start',
+                label: 'A',
+                animation: google.maps.Animation.DROP
+            });
+        }
+
+        function setEndLocation(lat, lng) {
+            document.getElementById('endLat').value = lat.toFixed(8);
+            document.getElementById('endLon').value = lng.toFixed(8);
+
+            if (endMarker) {
+                endMarker.setMap(null);
+            }
+
+            endMarker = new google.maps.Marker({
+                position: { lat, lng },
+                map: map,
+                title: 'End',
+                label: 'B',
+                animation: google.maps.Animation.DROP
+            });
+        }
+
+        function clearMap() {
+            if (startMarker) startMarker.setMap(null);
+            if (endMarker) endMarker.setMap(null);
+            if (routeLine) routeLine.setMap(null);
+            
+            document.getElementById('startLat').value = '';
+            document.getElementById('startLon').value = '';
+            document.getElementById('endLat').value = '';
+            document.getElementById('endLon').value = '';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('error').classList.remove('active');
+        }
+
+        async function calculateRoute() {
+            const startLat = document.getElementById('startLat').value;
+            const startLon = document.getElementById('startLon').value;
+            const endLat = document.getElementById('endLat').value;
+            const endLon = document.getElementById('endLon').value;
+
+            if (!startLat || !startLon || !endLat || !endLon) {
+                showError('Please enter all coordinates or click on the map');
+                return;
+            }
+
+            document.getElementById('loading').classList.add('active');
+            document.getElementById('error').classList.remove('active');
+            document.getElementById('calculateBtn').disabled = true;
+
+            try {
+                const response = await fetch('http://localhost:3000/api/calculate-route', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ startLat, startLon, endLat, endLon })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to calculate route');
+                }
+
+                displayResults(data);
+                drawRoute(data.dijkstra.coordinates);
+
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                document.getElementById('loading').classList.remove('active');
+                document.getElementById('calculateBtn').disabled = false;
+            }
+        }
+
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            const resultsContent = document.getElementById('resultsContent');
+
+            let html = '';
+
+            // Dijkstra results
+            html += `
+                <div class="result-item">
+                    <h4>🔵 Dijkstra Algorithm</h4>
+                    <p><strong>Distance:</strong> ${data.dijkstra.distanceKm} km</p>
+                    <p><strong>Nodes:</strong> ${data.dijkstra.nodes}</p>
+                </div>
+            `;
+
+            // Google Maps results
+            if (data.googleMaps) {
+                html += `
+                    <div class="result-item">
+                        <h4>🗺️ Google Maps</h4>
+                        <p><strong>Distance:</strong> ${data.googleMaps.distanceText}</p>
+                        <p><strong>Travel Time:</strong> ${data.googleMaps.travelTimeText}</p>
+                        <p><strong>With Traffic:</strong> ${data.googleMaps.travelTime ? 'Yes' : 'No'}</p>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="result-item">
+                        <h4>🗺️ Google Maps</h4>
+                        <p style="color: #dc3545;">No API key configured</p>
+                    </div>
+                `;
+            }
+
+            resultsContent.innerHTML = html;
+            resultsDiv.style.display = 'block';
+        }
+
+        function drawRoute(coordinates) {
+            if (routeLine) {
+                routeLine.setMap(null);
+            }
+
+            if (!coordinates || coordinates.length === 0) {
+                return;
+            }
+
+            const path = coordinates.map(coord => ({
+                lat: coord[0],
+                lng: coord[1]
+            }));
+
+            routeLine = new google.maps.Polyline({
+                path: path,
+                geodesic: true,
+                strokeColor: '#667eea',
+                strokeOpacity: 0.8,
+                strokeWeight: 4,
+                map: map
+            });
+
+            // Fit bounds to show entire route
+            const bounds = new google.maps.LatLngBounds();
+            path.forEach(point => bounds.extend(point));
+            map.fitBounds(bounds);
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('active');
+        }
+
+        // Event listeners
+        document.getElementById('calculateBtn').addEventListener('click', calculateRoute);
+        document.getElementById('clearBtn').addEventListener('click', clearMap);
+
+        // Allow Enter key to calculate
+        document.querySelectorAll('input').forEach(input => {
+            input.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    calculateRoute();
+                }
+            });
+        });
+    </script>
+
+    <!-- Load Google Maps API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDEY5oa_OvHDFjZTrNwjgMxEYIprc3_6Rw&callback=initMap" async defer></script>
+</body>
+</html>
