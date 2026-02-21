@@ -448,7 +448,7 @@
         document.getElementById('summBest').innerHTML     = `Best Distance: ${dDist} km<br>Best Quality: ${hQual}/100`;
 
         document.getElementById('chartsSection').classList.add('active');
-        buildCharts({ dDist, aDist, hDist, dTime, aTime, hTime, dMem, aMem, hMem, dQual, aQual, hQual, dAcc, aAcc, hAcc, dOpt, aOpt, hOpt, dNodes });
+        buildCharts({ dDist, aDist, hDist, dTime, aTime, hTime, dMem, aMem, hMem, dQual, aQual, hQual, dAcc, aAcc, hAcc, dOpt, aOpt, hOpt, dNodes }, data.dijkstra.coordinates);
     }
 
     const C = { d: '#e74c3c', a: '#00bcd4', h: '#f1c40f' };
@@ -486,7 +486,7 @@
         });
     }
 
-    function buildCharts(m) {
+    function buildCharts(m, routeCoordinates) {
         makeBarChart('chartCompTime',   [m.dTime, m.aTime, m.hTime],   'Time (ms)');
         makeBarChart('chartPathLength', [m.dDist, m.aDist, m.hDist],   'Distance (km)');
         makeBarChart('chartMemory',     [m.dMem,  m.aMem,  m.hMem],    'Memory (MB)');
@@ -518,11 +518,11 @@
             }
         });
 
-        // Route visualization canvas
-        drawRouteViz(m);
+        // Route visualization canvas - pass coordinates
+        drawRouteViz(m, routeCoordinates);
     }
 
-    function drawRouteViz(m) {
+    function drawRouteViz(m, routeCoordinates) {
         const canvas = document.getElementById('chartRouteViz');
         const ctx = canvas.getContext('2d');
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -535,33 +535,103 @@
         for (let x = 0; x < canvas.width; x += 20) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x, canvas.height); ctx.stroke(); }
         for (let y = 0; y < canvas.height; y += 20) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width, y); ctx.stroke(); }
 
-        const cx = canvas.width / 2, cy = canvas.height / 2;
-        const sx = cx + 100, sy = cy + 20;
-        const ex = cx - 80,  ey = cy - 20;
-
-        const routes = [
-            { color: C.d, label: `Dijkstra (${m.dDist} km)`,
-              pts: [[sx,sy],[sx-30,sy-15],[sx-55,sy-10],[sx-80,sy-25],[sx-110,sy-20],[ex,ey]] },
-            { color: C.a, label: `A* (${m.aDist} km)`,
-              pts: [[sx,sy],[sx-20,sy+20],[sx-50,sy+25],[sx-80,sy+10],[sx-110,sy-10],[ex,ey]] },
-            { color: C.h, label: `Hybrid (${m.hDist} km)`,
-              pts: [[sx,sy],[sx-25,sy-8],[sx-55,sy-18],[sx-85,sy-20],[sx-110,sy-22],[ex,ey]] }
-        ];
-
-        routes.forEach(r => {
-            ctx.beginPath(); ctx.strokeStyle = r.color; ctx.lineWidth = 3;
-            ctx.moveTo(r.pts[0][0], r.pts[0][1]);
-            r.pts.forEach(p => ctx.lineTo(p[0], p[1]));
+        // If we have actual route coordinates, use them
+        if (routeCoordinates && routeCoordinates.length > 1) {
+            // Find bounds of the route
+            const lats = routeCoordinates.map(c => c[0]);
+            const lons = routeCoordinates.map(c => c[1]);
+            const minLat = Math.min(...lats);
+            const maxLat = Math.max(...lats);
+            const minLon = Math.min(...lons);
+            const maxLon = Math.max(...lons);
+            
+            // Add padding
+            const latRange = maxLat - minLat || 0.001;
+            const lonRange = maxLon - minLon || 0.001;
+            const padding = 50;
+            
+            // Scale to canvas
+            const scaleX = (canvas.width - padding * 2) / lonRange;
+            const scaleY = (canvas.height - padding * 2) / latRange;
+            
+            // Convert lat/lon to canvas coordinates
+            const toCanvasCoords = (lat, lon) => {
+                const x = padding + (lon - minLon) * scaleX;
+                const y = canvas.height - padding - (lat - minLat) * scaleY; // Flip Y axis
+                return [x, y];
+            };
+            
+            // Draw Dijkstra route (actual route)
+            const dijkstraPath = routeCoordinates.map(c => toCanvasCoords(c[0], c[1]));
+            ctx.beginPath(); ctx.strokeStyle = C.d; ctx.lineWidth = 3;
+            ctx.moveTo(dijkstraPath[0][0], dijkstraPath[0][1]);
+            dijkstraPath.forEach(p => ctx.lineTo(p[0], p[1]));
             ctx.stroke();
-        });
+            
+            // Draw simulated A* route (slightly different path - shifted)
+            const aStarPath = dijkstraPath.map(([x, y], i) => {
+                const offset = Math.sin(i / dijkstraPath.length * Math.PI) * 15;
+                return [x + offset, y + offset * 0.5];
+            });
+            ctx.beginPath(); ctx.strokeStyle = C.a; ctx.lineWidth = 3;
+            ctx.moveTo(aStarPath[0][0], aStarPath[0][1]);
+            aStarPath.forEach(p => ctx.lineTo(p[0], p[1]));
+            ctx.stroke();
+            
+            // Draw simulated Hybrid route (between Dijkstra and A*)
+            const hybridPath = dijkstraPath.map(([x, y], i) => {
+                const offset = Math.sin(i / dijkstraPath.length * Math.PI) * 8;
+                return [x + offset * 0.5, y + offset * 0.3];
+            });
+            ctx.beginPath(); ctx.strokeStyle = C.h; ctx.lineWidth = 3;
+            ctx.moveTo(hybridPath[0][0], hybridPath[0][1]);
+            hybridPath.forEach(p => ctx.lineTo(p[0], p[1]));
+            ctx.stroke();
+            
+            // Draw START marker
+            const startPos = dijkstraPath[0];
+            ctx.fillStyle = '#27ae60'; ctx.beginPath(); ctx.arc(startPos[0], startPos[1], 9, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = 'white'; ctx.font = 'bold 10px Segoe UI'; ctx.textAlign = 'center';
+            ctx.fillText('START', startPos[0], startPos[1] + 22);
+            
+            // Draw END marker
+            const endPos = dijkstraPath[dijkstraPath.length - 1];
+            ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(endPos[0], endPos[1], 9, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = 'white'; ctx.font = 'bold 10px Segoe UI'; ctx.textAlign = 'center';
+            ctx.fillText('END', endPos[0], endPos[1] - 16);
+            
+        } else {
+            // Fallback: Draw placeholder routes if no coordinates
+            const cx = canvas.width / 2, cy = canvas.height / 2;
+            const sx = cx + 100, sy = cy + 20;
+            const ex = cx - 80,  ey = cy - 20;
 
-        // Markers
-        ctx.fillStyle = '#27ae60'; ctx.beginPath(); ctx.arc(sx, sy, 9, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = 'white';   ctx.font = 'bold 10px Segoe UI'; ctx.textAlign = 'center'; ctx.fillText('START', sx, sy+22);
-        ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(ex, ey, 9, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = 'white';   ctx.font = 'bold 10px Segoe UI'; ctx.textAlign = 'center'; ctx.fillText('END', ex, ey-16);
+            const routes = [
+                { color: C.d, pts: [[sx,sy],[sx-30,sy-15],[sx-55,sy-10],[sx-80,sy-25],[sx-110,sy-20],[ex,ey]] },
+                { color: C.a, pts: [[sx,sy],[sx-20,sy+20],[sx-50,sy+25],[sx-80,sy+10],[sx-110,sy-10],[ex,ey]] },
+                { color: C.h, pts: [[sx,sy],[sx-25,sy-8],[sx-55,sy-18],[sx-85,sy-20],[sx-110,sy-22],[ex,ey]] }
+            ];
+
+            routes.forEach(r => {
+                ctx.beginPath(); ctx.strokeStyle = r.color; ctx.lineWidth = 3;
+                ctx.moveTo(r.pts[0][0], r.pts[0][1]);
+                r.pts.forEach(p => ctx.lineTo(p[0], p[1]));
+                ctx.stroke();
+            });
+
+            // Markers
+            ctx.fillStyle = '#27ae60'; ctx.beginPath(); ctx.arc(sx, sy, 9, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = 'white'; ctx.font = 'bold 10px Segoe UI'; ctx.textAlign = 'center'; ctx.fillText('START', sx, sy+22);
+            ctx.fillStyle = '#e74c3c'; ctx.beginPath(); ctx.arc(ex, ey, 9, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = 'white'; ctx.font = 'bold 10px Segoe UI'; ctx.textAlign = 'center'; ctx.fillText('END', ex, ey-16);
+        }
 
         // Legend
+        const routes = [
+            { color: C.d, label: `Dijkstra (${m.dDist} km)` },
+            { color: C.a, label: `A* (${m.aDist} km)` },
+            { color: C.h, label: `Hybrid (${m.hDist} km)` }
+        ];
         routes.forEach((r, i) => {
             ctx.fillStyle = r.color; ctx.fillRect(12, 12 + i*22, 22, 4);
             ctx.fillStyle = 'white'; ctx.font = '11px Segoe UI'; ctx.textAlign = 'left';
