@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Route Calculator</title>
+    
+    <!-- External CSS -->
+    <link rel="stylesheet" href="styles.css">
+    
+    <!-- Chart.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Main Container -->
+    <div class="container">
+
+        <!-- Top Section: Sidebar + Map -->
+        <div class="top-section">
+            
+            <!-- Sidebar with Controls -->
+            <div class="sidebar">
+                <!-- Start Location Inputs -->
+                <div class="input-group">
+                    <label>Start Latitude</label>
+                    <input type="text" id="startLat" placeholder="16.42624764730844">
+                    <small>Click on map or enter manually</small>
+                </div>
+                <div class="input-group">
+                    <label>Start Longitude</label>
+                    <input type="text" id="startLon" placeholder="120.59789698832675">
+                </div>
+
+                <!-- End Location Inputs -->
+                <div class="input-group">
+                    <label>End Latitude</label>
+                    <input type="text" id="endLat" placeholder="16.42338973567086">
+                    <small>Click on map or enter manually</small>
+                </div>
+                <div class="input-group">
+                    <label>End Longitude</label>
+                    <input type="text" id="endLon" placeholder="120.60298773090588">
+                </div>
+
+                <!-- Action Buttons -->
+                <button class="btn" id="calculateBtn">Calculate Route</button>
+                <button class="btn btn-clear" id="clearBtn">Clear Map</button>
+
+                <!-- Loading Indicator -->
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Calculating route...</p>
+                </div>
+
+                <!-- Error Message -->
+                <div class="error" id="error"></div>
+
+                <!-- Algorithm Summary Cards -->
+                <div class="algo-summary" id="algoSummary">
+                    <div class="algo-card card-dijkstra" id="cardDijkstra">
+                        <h4>🔴 Dijkstra</h4>
+                        <p>Pure shortest path</p>
+                    </div>
+                    <div class="algo-card card-astar" id="cardAStar">
+                        <h4>🔵 A* Algorithm</h4>
+                        <p>Highway biased</p>
+                    </div>
+                    <div class="algo-card card-hybrid" id="cardHybrid">
+                        <h4>🟡 Hybrid</h4>
+                        <p>Adaptive intelligent</p>
+                    </div>
+                    <div class="algo-card card-google" id="cardGoogle">
+                        <h4>🗺️ Google Maps</h4>
+                        <p>Real-time traffic</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Map Container -->
+            <div class="map-container">
+                <div id="map"></div>
+                
+                <!-- Map Controls -->
+                <div class="map-controls">
+                    <button onclick="setMode('start', event)">📍 Set Start</button>
+                    <button onclick="setMode('end', event)">🎯 Set End</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Section: Charts Dashboard -->
+        <div class="charts-section" id="chartsSection">
+            <div class="charts-title">Adaptive Hybrid Algorithm: Consistent Superior Performance</div>
+
+            <!-- Top Row: 4 Bar Charts -->
+            <div class="charts-top">
+                <div class="chart-box">
+                    <h4>Computation Time</h4>
+                    <canvas id="chartCompTime"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h4>Path Length</h4>
+                    <canvas id="chartPathLength"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h4>Peak Memory</h4>
+                    <canvas id="chartMemory"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h4>Route Quality Score</h4>
+                    <canvas id="chartQuality"></canvas>
+                </div>
+            </div>
+
+            <!-- Bottom Row: Scalability + Optimality + Accuracy + Summary -->
+            <div class="charts-bottom">
+                <div class="chart-box">
+                    <h4>Scalability</h4>
+                    <canvas id="chartScalability"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h4>Path Optimality</h4>
+                    <canvas id="chartOptimality"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h4>Accuracy vs Google Maps</h4>
+                    <canvas id="chartAccuracy"></canvas>
+                </div>
+                
+                <!-- Summary Info Box -->
+                <div class="summary-box" id="summaryBox">
+                    <h4>ADAPTIVE HYBRID ROUTING</h4>
+                    <div class="algo-block" id="summDijkstra">
+                        <strong>Dijkstra:</strong>
+                        <p>• Pure shortest path</p>
+                        <p>• Distance: — km</p>
+                        <p>• Quality: —/100</p>
+                    </div>
+                    <div class="algo-block" id="summAStar">
+                        <strong>A*:</strong>
+                        <p>• Highway-biased</p>
+                        <p>• Distance: — km</p>
+                        <p>• Quality: —/100</p>
+                    </div>
+                    <div class="algo-block" id="summHybrid">
+                        <strong>Hybrid:</strong>
+                        <p>• Adaptive intelligent</p>
+                        <p>• Distance: — km</p>
+                        <p>• Quality: —/100</p>
+                    </div>
+                    <div class="best-line" id="summBest">
+                        Best Distance: — km<br>
+                        Best Quality: —/100
+                    </div>
+                </div>
+            </div>
+
+            <!-- Route Visualization -->
+            <div class="chart-box">
+                <h4>Route Visualization</h4>
+                <div class="route-canvas-container">
+                    <canvas id="chartRouteViz" width="600" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- External JavaScript -->
+    <script src="script.js"></script>
+    
+    <!-- Google Maps API -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDEY5oa_OvHDFjZTrNwjgMxEYIprc3_6Rw&callback=initMap" async defer></script>
+</body>
+</html>
