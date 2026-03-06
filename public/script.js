@@ -397,81 +397,10 @@ function buildCharts(m, routeCoordinates) {
     makeBarChart('chartMemory', [m.dMem, m.aMem, m.hMem], 'Memory (MB)');
     makeBarChart('chartQuality', [m.dQual, m.aQual, m.hQual], 'Score (0-100)');
     makeBarChart('chartOptimality', [m.dOpt, m.aOpt, m.hOpt], 'Deviation (%)');
-    makeBarChart('chartAccuracy', [m.dAcc, m.aAcc, m.hAcc], 'Error (%)');
-
-    // Create scalability line chart
-    createScalabilityChart(m.dNodes);
 
     // Draw route visualization
     drawRouteViz(m, routeCoordinates);
 }
-
-/**
- * Create scalability line chart
- * @param {number} baseNodes - Base number of nodes for scaling
- */
-function createScalabilityChart(baseNodes) {
-    destroyChart('chartScalability');
-
-    const nodePoints = [200, 400, 600, 800, 1000];
-    const scaleFactor = baseNodes / 1000;
-
-    const ctx = document.getElementById('chartScalability');
-    chartInstances['chartScalability'] = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: nodePoints,
-            datasets: [
-                {
-                    label: 'Dijkstra',
-                    data: nodePoints.map(n => parseFloat((n * 0.0004 * scaleFactor * 10).toFixed(3))),
-                    borderColor: COLORS.d,
-                    backgroundColor: COLORS.d + '33',
-                    pointRadius: 3,
-                    tension: 0.3
-                },
-                {
-                    label: 'A*',
-                    data: nodePoints.map(n => parseFloat((n * 0.0012 * scaleFactor * 10).toFixed(3))),
-                    borderColor: COLORS.a,
-                    backgroundColor: COLORS.a + '33',
-                    pointRadius: 3,
-                    tension: 0.3
-                },
-                {
-                    label: 'Hybrid',
-                    data: nodePoints.map(n => parseFloat((n * 0.0009 * scaleFactor * 10).toFixed(3))),
-                    borderColor: COLORS.h,
-                    backgroundColor: COLORS.h + '33',
-                    pointRadius: 3,
-                    tension: 0.3
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            plugins: {
-                legend: {
-                    display: true,
-                    labels: { color: '#aaa', font: { size: 10 }, boxWidth: 12 }
-                }
-            },
-            scales: {
-                x: {
-                    ticks: { color: '#aaa', font: { size: 10 } },
-                    grid: { color: '#2a2a4a' },
-                    title: { display: true, text: 'Nodes', color: '#888', font: { size: 10 } }
-                },
-                y: {
-                    ticks: { color: '#aaa', font: { size: 10 } },
-                    grid: { color: '#2a2a4a' },
-                    title: { display: true, text: 'Time (ms)', color: '#888', font: { size: 10 } }
-                }
-            }
-        }
-    });
-}
-
 
 // ============================================
 // ROUTE VISUALIZATION CANVAS
