@@ -22,11 +22,24 @@ const COLORS = {
  * Called automatically when Google Maps API loads
  */
 function initMap() {
-    // Create map centered on Baguio City
+    // Tramcoville and Aurora Hill
+    const bounds = new google.maps.LatLngBounds(
+        { lat: 16.421226808151626, lng: 120.58993396277761 }, // southwest corner
+        { lat: 16.430451591739512, lng: 120.60680483368087 }  // northeast corner
+    );
+
+    // Map restricted to those bounds
     map = new google.maps.Map(document.getElementById('map'), {
-        center: { lat: 16.4023, lng: 120.5960 },
-        zoom: 14
+        mapTypeId: 'roadmap',
+        minZoom: 1,
+        maxZoom: 50
     });
+
+    // Fit the map to the defined bounds
+    map.fitBounds(bounds);
+
+    map.setOptions({restriction: {latLngBounds: bounds }}) // zooms to your area
+// no restriction applied, so user can zoom/pan anywhere
 
     // Add click listener to map for setting start/end points
     map.addListener('click', (e) => {
