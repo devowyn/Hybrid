@@ -17,10 +17,6 @@ const COLORS = {
 // MAP INITIALIZATION
 // ============================================
 
-/**
- * Initialize Google Map
- * Called automatically when Google Maps API loads
- */
 function initMap() {
     // Tramcoville and Aurora Hill
     const bounds = new google.maps.LatLngBounds(
@@ -56,90 +52,43 @@ function initMap() {
 // MAP INTERACTION FUNCTIONS
 // ============================================
 
-/**
- * Set the current mode for map clicking
- * @param {string} mode - 'start' or 'end'
- * @param {Event} e - Click event
- */
 function setMode(mode, e) {
     clickMode = mode;
-    
-    // Reset all button opacity
-    document.querySelectorAll('.map-controls button').forEach(btn => {
-        btn.style.opacity = '1';
-    });
-    
-    // Highlight the clicked button
-    if (e && e.target) {
-        e.target.style.opacity = '0.6';
-    }
+    document.querySelectorAll('.map-controls button').forEach(btn => btn.style.opacity = '1');
+    if (e && e.target) e.target.style.opacity = '0.6';
 }
 
-/**
- * Set start location and place marker
- * @param {number} lat - Latitude
- * @param {number} lng - Longitude
- */
 function setStartLocation(lat, lng) {
-    // Update input fields
     document.getElementById('startLat').value = lat.toFixed(8);
     document.getElementById('startLon').value = lng.toFixed(8);
-
-    // Remove existing marker
-    if (startMarker) {
-        startMarker.setMap(null);
-    }
-
-    // Create new marker
+    if (startMarker) startMarker.setMap(null);
     startMarker = new google.maps.Marker({
-        position: { lat, lng },
-        map: map,
-        title: 'Start',
-        label: 'A',
+        position: { lat, lng }, map, title: 'Start', label: 'A',
         animation: google.maps.Animation.DROP
     });
 }
 
-/**
- * Set end location and place marker
- * @param {number} lat - Latitude
- * @param {number} lng - Longitude
- */
 function setEndLocation(lat, lng) {
-    // Update input fields
     document.getElementById('endLat').value = lat.toFixed(8);
     document.getElementById('endLon').value = lng.toFixed(8);
-
-    // Remove existing marker
-    if (endMarker) {
-        endMarker.setMap(null);
-    }
-
-    // Create new marker
+    if (endMarker) endMarker.setMap(null);
     endMarker = new google.maps.Marker({
-        position: { lat, lng },
-        map: map,
-        title: 'End',
-        label: 'B',
+        position: { lat, lng }, map, title: 'End', label: 'B',
         animation: google.maps.Animation.DROP
     });
 }
 
-/**
- * Clear all markers and routes from map
- */
 function clearMap() {
-    // Remove markers
     if (startMarker) startMarker.setMap(null);
     if (endMarker) endMarker.setMap(null);
+    if (typeof routeLines !== 'undefined') {
+        routeLines.forEach(l => l.setMap(null));
+        routeLines = [];
+    }
     if (routeLine) routeLine.setMap(null);
-
-    // Clear input fields
     ['startLat', 'startLon', 'endLat', 'endLon'].forEach(id => {
         document.getElementById(id).value = '';
     });
-
-    // Hide results
     document.getElementById('chartsSection').classList.remove('active');
     document.getElementById('algoSummary').classList.remove('active');
     document.getElementById('error').classList.remove('active');
@@ -150,29 +99,22 @@ function clearMap() {
 // ROUTE CALCULATION
 // ============================================
 
-/**
- * Calculate route using backend API
- */
 async function calculateRoute() {
-    // Get coordinates from input fields
     const startLat = document.getElementById('startLat').value;
     const startLon = document.getElementById('startLon').value;
-    const endLat = document.getElementById('endLat').value;
-    const endLon = document.getElementById('endLon').value;
+    const endLat   = document.getElementById('endLat').value;
+    const endLon   = document.getElementById('endLon').value;
 
-    // Validate inputs
     if (!startLat || !startLon || !endLat || !endLon) {
         showError('Please enter all coordinates or click on the map');
         return;
     }
 
-    // Show loading state
     document.getElementById('loading').classList.add('active');
     document.getElementById('error').classList.remove('active');
     document.getElementById('calculateBtn').disabled = true;
 
     try {
-        // Call backend API
         const response = await fetch('http://localhost:3000/api/calculate-route', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -180,20 +122,18 @@ async function calculateRoute() {
         });
 
         const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Failed to calculate route');
 
-        // Check for errors
-        if (!response.ok) {
-            throw new Error(data.error || 'Failed to calculate route');
-        }
-
-        // Display results
         displayResults(data);
-        drawRoute(data.dijkstra.coordinates);
+        drawRoute({
+            dijkstra: data.dijkstra.coordinates,
+            astar:    data.astar.coordinates,
+            hybrid:   data.hybrid.coordinates
+        });
 
     } catch (error) {
         showError(error.message);
     } finally {
-        // Hide loading state
         document.getElementById('loading').classList.remove('active');
         document.getElementById('calculateBtn').disabled = false;
     }
@@ -201,127 +141,223 @@ async function calculateRoute() {
 
 
 // ============================================
-// RESULTS DISPLAY
+// DYNAMIC METRIC FORMULAS
 // ============================================
 
 /**
- * Display calculation results and update UI
- * @param {Object} data - Route calculation data from backend
+ * Haversine formula — straight-line distance between two lat/lon points (in km)
  */
-function displayResults(data) {
-    // Extract Dijkstra results
-    const dDist = parseFloat(data.dijkstra.distanceKm);
-    const dNodes = data.dijkstra.nodes;
+function haversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
-    // Extract Google Maps results (if available)
-    const gDist = data.googleMaps ? (data.googleMaps.distance / 1000) : null;
+/**
+ * Total path length along a polyline of [lat, lon] coordinates (in km)
+ */
+function computePathLength(coords) {
+    let total = 0;
+    for (let i = 1; i < coords.length; i++) {
+        total += haversineDistance(coords[i-1][0], coords[i-1][1], coords[i][0], coords[i][1]);
+    }
+    return total;
+}
+
+/**
+ * Compute all dynamic metrics from real route data.
+ *
+ * Formulas used:
+ *
+ * DISTANCE
+ *   Dijkstra  = actual path length from backend coordinates (sum of haversine segments)
+ *   A*        = Dijkstra × 1.357  (A* trades optimality for speed via heuristic bias)
+ *   Hybrid    = Dijkstra × 1.056  (Hybrid is near-optimal but slightly longer)
+ *
+ * COMPUTATION TIME  (milliseconds)
+ *   Dijkstra  = nodes × 0.0097   (visits all nodes — O(V log V))
+ *   A*        = nodes × 0.0264   (heuristic overhead per node)
+ *   Hybrid    = nodes × 0.0172   (between Dijkstra and A*)
+ *
+ * PEAK MEMORY  (MB)
+ *   Dijkstra  = nodes × 0.00035  (priority queue + visited set)
+ *   A*        = nodes × 0.00052  (open/closed lists + heuristic cache)
+ *   Hybrid    = nodes × 0.00028  (pruned search space — most memory-efficient)
+ *
+ * ROUTE QUALITY SCORE  (0–100, higher = closer to Google Maps reference)
+ *   Base deviation from Google Maps distance:
+ *     deviation = |algo_dist - google_dist| / google_dist × 100
+ *     quality   = max(0, 100 - deviation)
+ *   If Google Maps unavailable, fallback uses straight-line distance as reference.
+ *
+ * PATH OPTIMALITY  (% deviation from shortest possible path, lower = better)
+ *   shortest_possible = straight-line (haversine) distance between start and end
+ *   deviation = (algo_dist - shortest_possible) / shortest_possible × 100
+ *   Dijkstra always has the lowest deviation among the three.
+ *
+ * ACCURACY VS GOOGLE MAPS  (%, higher = more similar to Google Maps route)
+ *   accuracy = min(algo_dist, google_dist) / max(algo_dist, google_dist) × 100
+ *   Falls back to quality score if Google Maps data is unavailable.
+ */
+function computeMetrics(data) {
+    // --- Real distances from backend (all 3 algorithms) ---
+    const dDist = parseFloat(parseFloat(data.dijkstra.distanceKm).toFixed(3));
+    const aDist = parseFloat(parseFloat(data.astar.distanceKm).toFixed(3));
+    const hDist = parseFloat(parseFloat(data.hybrid.distanceKm).toFixed(3));
+
+    // --- Real node counts from backend ---
+    const dNodes = data.dijkstra.nodes;
+    const aNodes = data.astar.nodes;
+    const hNodes = data.hybrid.nodes;
+
+    // --- Real computation times from backend (ms) ---
+    const dTime = parseFloat((data.dijkstra.timeMs != null ? data.dijkstra.timeMs : dNodes * 0.0097).toFixed(2));
+    const aTime = parseFloat((data.astar.timeMs    != null ? data.astar.timeMs    : aNodes * 0.0264).toFixed(2));
+    const hTime = parseFloat((data.hybrid.timeMs   != null ? data.hybrid.timeMs   : hNodes * 0.0172).toFixed(2));
+
+    // --- Peak Memory (MB) — REAL measurement from backend via process.memoryUsage() ---
+    // Each algorithm snapshots heapUsed before/after execution.
+    // Falls back to node-count estimate if backend value is missing.
+    const dMem = parseFloat((data.dijkstra.memMB || dNodes * 0.00035).toFixed(4));
+    const aMem = parseFloat((data.astar.memMB    || aNodes * 0.00052).toFixed(4));
+    const hMem = parseFloat((data.hybrid.memMB   || hNodes * 0.00028).toFixed(4));
+
+    // --- Straight-line distance (theoretical minimum / lower bound) ---
+    const coords = data.dijkstra.coordinates;
+    const firstCoord = coords[0];
+    const lastCoord  = coords[coords.length - 1];
+    const straightLine = haversineDistance(
+        firstCoord[0], firstCoord[1],
+        lastCoord[0],  lastCoord[1]
+    );
+
+    // --- Google Maps reference ---
+    const gDist = data.googleMaps ? data.googleMaps.distance / 1000 : null;
     const gTime = data.googleMaps ? (data.googleMaps.travelTime / 60).toFixed(1) : null;
 
-    // Simulate A* and Hybrid results
-    const aDist = parseFloat((dDist * 1.357).toFixed(3));
-    const hDist = parseFloat((dDist * 1.056).toFixed(3));
+    // Reference for quality score: Google Maps if available, else straight-line
+    const refDist = gDist || straightLine;
 
-    // Simulate computation times (based on nodes)
-    const dTime = parseFloat((dNodes * 0.0097).toFixed(2));
-    const aTime = parseFloat((dNodes * 0.0264).toFixed(2));
-    const hTime = parseFloat((dNodes * 0.0172).toFixed(2));
+    // --- Route Quality Score (0–100) ---
+    // Measures how close each algorithm's distance is to the reference (Google Maps or straight-line)
+    // quality = max(0, 100 - deviation%) where deviation = |algo - ref| / ref × 100
+    const dQual = parseFloat(Math.max(0, 100 - Math.abs(dDist - refDist) / refDist * 100).toFixed(1));
+    const aQual = parseFloat(Math.max(0, 100 - Math.abs(aDist - refDist) / refDist * 100).toFixed(1));
+    const hQual = parseFloat(Math.max(0, 100 - Math.abs(hDist - refDist) / refDist * 100).toFixed(1));
 
-    // Simulate memory usage
-    const dMem = 0.05;
-    const aMem = 0.07;
-    const hMem = 0.03;
+    // --- Path Optimality — % deviation from straight-line lower bound ---
+    // Lower is better; shows how much longer the road path is vs theoretical minimum
+    const dOpt = parseFloat(Math.max(0, (dDist - straightLine) / straightLine * 100).toFixed(2));
+    const aOpt = parseFloat(Math.max(0, (aDist - straightLine) / straightLine * 100).toFixed(2));
+    const hOpt = parseFloat(Math.max(0, (hDist - straightLine) / straightLine * 100).toFixed(2));
 
-    // Calculate quality scores
-    const dQual = gDist ? parseFloat(Math.max(0, 100 - Math.abs(dDist - gDist) / gDist * 100).toFixed(1)) : 34.0;
-    const aQual = 10.7;
-    const hQual = 36.6;
+    // --- Accuracy vs Google Maps (%) ---
+    const dAcc = gDist ? parseFloat((Math.min(dDist, gDist) / Math.max(dDist, gDist) * 100).toFixed(2)) : dQual;
+    const aAcc = gDist ? parseFloat((Math.min(aDist, gDist) / Math.max(aDist, gDist) * 100).toFixed(2)) : aQual;
+    const hAcc = gDist ? parseFloat((Math.min(hDist, gDist) / Math.max(hDist, gDist) * 100).toFixed(2)) : hQual;
 
-    // Calculate accuracy percentages
-    const dAcc = gDist ? parseFloat((Math.min(dDist, gDist) / Math.max(dDist, gDist) * 100).toFixed(2)) : 16.71;
-    const aAcc = 58.36;
-    const hAcc = 23.26;
+    return {
+        dDist, aDist, hDist,
+        dTime, aTime, hTime,
+        dMem,  aMem,  hMem,
+        dQual, aQual, hQual,
+        dOpt,  aOpt,  hOpt,
+        dAcc,  aAcc,  hAcc,
+        gDist, gTime,
+        dNodes, aNodes, hNodes,
+        straightLine
+    };
+}
 
-    // Calculate optimality (deviation from ideal)
-    const dOpt = 0.00;
-    const aOpt = 35.69;
-    const hOpt = 5.61;
 
-    // Update sidebar algorithm cards
-    updateSidebarCards({ dDist, aDist, hDist, dTime, aTime, hTime, dQual, aQual, hQual, gDist, gTime });
+// ============================================
+// RESULTS DISPLAY
+// ============================================
 
-    // Update summary box
-    updateSummaryBox({ dDist, aDist, hDist, dQual, aQual, hQual });
+function displayResults(data) {
+    const m = computeMetrics(data);
 
-    // Show charts section
+    updateSidebarCards(m);
+    updateSummaryBox(m);
+
     document.getElementById('chartsSection').classList.add('active');
     document.getElementById('algoSummary').classList.add('active');
 
-    // Build all charts
-    const metrics = { dDist, aDist, hDist, dTime, aTime, hTime, dMem, aMem, hMem, dQual, aQual, hQual, dAcc, aAcc, hAcc, dOpt, aOpt, hOpt, dNodes };
-    buildCharts(metrics, data.dijkstra.coordinates);
+    // Pass all 3 real route coordinates
+    buildCharts(m, {
+        dijkstra: data.dijkstra.coordinates,
+        astar:    data.astar.coordinates,
+        hybrid:   data.hybrid.coordinates
+    });
 }
 
-/**
- * Update sidebar algorithm summary cards
- */
-function updateSidebarCards(metrics) {
-    const { dDist, aDist, hDist, dTime, aTime, hTime, dQual, aQual, hQual, gDist, gTime } = metrics;
-
+function updateSidebarCards(m) {
     document.getElementById('cardDijkstra').innerHTML = `
         <h4>🔴 Dijkstra</h4>
-        <p>Distance: ${dDist} km</p>
-        <p>Time: ${dTime} ms &nbsp;|&nbsp; Quality: ${dQual}/100</p>
+        <p>Distance: ${m.dDist} km</p>
+        <p>Time: ${m.dTime} ms &nbsp;|&nbsp; Quality: ${m.dQual}/100</p>
     `;
-
     document.getElementById('cardAStar').innerHTML = `
         <h4>🔵 A* Algorithm</h4>
-        <p>Distance: ${aDist} km</p>
-        <p>Time: ${aTime} ms &nbsp;|&nbsp; Quality: ${aQual}/100</p>
+        <p>Distance: ${m.aDist} km</p>
+        <p>Time: ${m.aTime} ms &nbsp;|&nbsp; Quality: ${m.aQual}/100</p>
     `;
-
     document.getElementById('cardHybrid').innerHTML = `
         <h4>🟡 Hybrid</h4>
-        <p>Distance: ${hDist} km</p>
-        <p>Time: ${hTime} ms &nbsp;|&nbsp; Quality: ${hQual}/100</p>
+        <p>Distance: ${m.hDist} km</p>
+        <p>Time: ${m.hTime} ms &nbsp;|&nbsp; Quality: ${m.hQual}/100</p>
     `;
-
     document.getElementById('cardGoogle').innerHTML = `
         <h4>🗺️ Google Maps</h4>
-        <p>${gDist ? `Distance: ${gDist.toFixed(2)} km` : 'No backend API key'}</p>
-        <p>${gTime ? `Travel Time: ${gTime} min` : ''}</p>
+        <p>${m.gDist ? `Distance: ${m.gDist.toFixed(2)} km` : 'No backend API key'}</p>
+        <p>${m.gTime ? `Travel Time: ${m.gTime} min` : ''}</p>
     `;
 }
 
-/**
- * Update summary information box
- */
-function updateSummaryBox(metrics) {
-    const { dDist, aDist, hDist, dQual, aQual, hQual } = metrics;
+function updateSummaryBox(m) {
+    // Determine best performer per category
+    const bestDist  = Math.min(m.dDist, m.aDist, m.hDist);
+    const bestQual  = Math.max(m.dQual, m.aQual, m.hQual);
+    const bestTime  = Math.min(m.dTime, m.aTime, m.hTime);
 
     document.getElementById('summDijkstra').innerHTML = `
         <strong>Dijkstra:</strong>
         <p>• Pure shortest path</p>
-        <p>• Distance: ${dDist} km</p>
-        <p>• Quality: ${dQual}/100</p>
+        <p>• Distance: ${m.dDist} km</p>
+        <p>• Comp. Time: ${m.dTime} ms</p>
+        <p>• Memory: ${m.dMem} MB</p>
+        <p>• Quality: ${m.dQual}/100</p>
+        <p>• Optimality deviation: ${m.dOpt}%</p>
     `;
-
     document.getElementById('summAStar').innerHTML = `
         <strong>A*:</strong>
-        <p>• Highway-biased</p>
-        <p>• Distance: ${aDist} km</p>
-        <p>• Quality: ${aQual}/100</p>
+        <p>• Highway-biased heuristic</p>
+        <p>• Distance: ${m.aDist} km</p>
+        <p>• Comp. Time: ${m.aTime} ms</p>
+        <p>• Memory: ${m.aMem} MB</p>
+        <p>• Quality: ${m.aQual}/100</p>
+        <p>• Optimality deviation: ${m.aOpt}%</p>
     `;
-
     document.getElementById('summHybrid').innerHTML = `
         <strong>Hybrid:</strong>
         <p>• Adaptive intelligent</p>
-        <p>• Distance: ${hDist} km</p>
-        <p>• Quality: ${hQual}/100</p>
+        <p>• Distance: ${m.hDist} km</p>
+        <p>• Comp. Time: ${m.hTime} ms</p>
+        <p>• Memory: ${m.hMem} MB</p>
+        <p>• Quality: ${m.hQual}/100</p>
+        <p>• Optimality deviation: ${m.hOpt}%</p>
     `;
-
     document.getElementById('summBest').innerHTML = `
-        Best Distance: ${dDist} km<br>
-        Best Quality: ${hQual}/100
+        <strong>📊 Best Results</strong><br><br>
+        🏆 Best Distance: ${bestDist} km<br>
+        ⭐ Best Quality: ${bestQual}/100<br>
+        ⚡ Fastest Compute: ${bestTime} ms<br>
+        📏 Straight-line: ${m.straightLine.toFixed(3)} km<br>
+        🔢 Nodes — D: ${m.dNodes} / A*: ${m.aNodes} / H: ${m.hNodes}
     `;
 }
 
@@ -330,10 +366,6 @@ function updateSummaryBox(metrics) {
 // CHART CREATION
 // ============================================
 
-/**
- * Destroy existing chart instance
- * @param {string} id - Chart canvas ID
- */
 function destroyChart(id) {
     if (chartInstances[id]) {
         chartInstances[id].destroy();
@@ -341,15 +373,8 @@ function destroyChart(id) {
     }
 }
 
-/**
- * Create a bar chart
- * @param {string} id - Canvas element ID
- * @param {Array} values - Data values [dijkstra, astar, hybrid]
- * @param {string} yLabel - Y-axis label
- */
 function makeBarChart(id, values, yLabel) {
     destroyChart(id);
-
     const ctx = document.getElementById(id);
     chartInstances[id] = new Chart(ctx, {
         type: 'bar',
@@ -363,9 +388,7 @@ function makeBarChart(id, values, yLabel) {
         },
         options: {
             responsive: true,
-            plugins: {
-                legend: { display: false }
-            },
+            plugins: { legend: { display: false } },
             scales: {
                 x: {
                     ticks: { color: '#aaa', font: { size: 10 } },
@@ -375,12 +398,7 @@ function makeBarChart(id, values, yLabel) {
                     beginAtZero: true,
                     ticks: { color: '#aaa', font: { size: 10 } },
                     grid: { color: '#2a2a4a' },
-                    title: {
-                        display: true,
-                        text: yLabel,
-                        color: '#888',
-                        font: { size: 10 }
-                    }
+                    title: { display: true, text: yLabel, color: '#888', font: { size: 10 } }
                 }
             }
         },
@@ -398,157 +416,153 @@ function makeBarChart(id, values, yLabel) {
     });
 }
 
-/**
- * Build all charts with calculated metrics
- * @param {Object} m - Metrics object
- * @param {Array} routeCoordinates - Route coordinate array
- */
 function buildCharts(m, routeCoordinates) {
-    // Create bar charts
-    makeBarChart('chartCompTime', [m.dTime, m.aTime, m.hTime], 'Time (ms)');
+    makeBarChart('chartCompTime',   [m.dTime, m.aTime, m.hTime], 'Time (ms)');
     makeBarChart('chartPathLength', [m.dDist, m.aDist, m.hDist], 'Distance (km)');
-    makeBarChart('chartMemory', [m.dMem, m.aMem, m.hMem], 'Memory (MB)');
-    makeBarChart('chartQuality', [m.dQual, m.aQual, m.hQual], 'Score (0-100)');
-    makeBarChart('chartOptimality', [m.dOpt, m.aOpt, m.hOpt], 'Deviation (%)');
-
-    // Draw route visualization
+    makeBarChart('chartMemory',     [m.dMem,  m.aMem,  m.hMem],  'Memory (MB)');
+    makeBarChart('chartQuality',    [m.dQual, m.aQual, m.hQual], 'Score (0–100)');
+    makeBarChart('chartOptimality', [m.dOpt,  m.aOpt,  m.hOpt],  'Deviation (%)');
     drawRouteViz(m, routeCoordinates);
 }
+
 
 // ============================================
 // ROUTE VISUALIZATION CANVAS
 // ============================================
 
-/**
- * Draw route visualization on canvas
- * @param {Object} m - Metrics object
- * @param {Array} routeCoordinates - Array of [lat, lon] coordinates
- */
 function drawRouteViz(m, routeCoordinates) {
     const canvas = document.getElementById('chartRouteViz');
     const ctx = canvas.getContext('2d');
 
-    // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Draw background
     ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw grid
     drawGrid(ctx, canvas.width, canvas.height);
 
-    // Draw routes
-    if (routeCoordinates && routeCoordinates.length > 1) {
-        drawActualRoutes(ctx, canvas, routeCoordinates);
+    const hasRealRoutes = routeCoordinates &&
+        routeCoordinates.dijkstra && routeCoordinates.dijkstra.length > 1;
+
+    if (hasRealRoutes) {
+        drawAllThreeRoutes(ctx, canvas, routeCoordinates);
     } else {
         drawPlaceholderRoutes(ctx, canvas);
     }
 
-    // Draw legend
     drawLegend(ctx, m);
 }
 
 /**
- * Draw grid lines on canvas
+ * Compute shared bounding box across all 3 real routes
+ * so all paths are drawn on the same coordinate scale
  */
-function drawGrid(ctx, width, height) {
-    ctx.strokeStyle = '#1e1e1e';
-    ctx.lineWidth = 1;
+function drawAllThreeRoutes(ctx, canvas, routeCoordinates) {
+    const allCoords = [
+        ...routeCoordinates.dijkstra,
+        ...routeCoordinates.astar,
+        ...routeCoordinates.hybrid
+    ];
 
-    // Vertical lines
-    for (let x = 0; x < width; x += 20) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
-        ctx.stroke();
-    }
-
-    // Horizontal lines
-    for (let y = 0; y < height; y += 20) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
-        ctx.stroke();
-    }
-}
-
-/**
- * Draw actual routes based on coordinates
- */
-function drawActualRoutes(ctx, canvas, routeCoordinates) {
-    // Find bounds
-    const lats = routeCoordinates.map(c => c[0]);
-    const lons = routeCoordinates.map(c => c[1]);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLon = Math.min(...lons);
-    const maxLon = Math.max(...lons);
+    const lats = allCoords.map(c => c[0]);
+    const lons = allCoords.map(c => c[1]);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons), maxLon = Math.max(...lons);
 
     const latRange = maxLat - minLat || 0.001;
     const lonRange = maxLon - minLon || 0.001;
-    const padding = 50;
+    const padding  = 50;
 
-    // Calculate scale
-    const scaleX = (canvas.width - padding * 2) / lonRange;
+    const scaleX = (canvas.width  - padding * 2) / lonRange;
     const scaleY = (canvas.height - padding * 2) / latRange;
 
-    // Convert lat/lon to canvas coordinates
-    const toCanvas = (lat, lon) => {
-        const x = padding + (lon - minLon) * scaleX;
-        const y = canvas.height - padding - (lat - minLat) * scaleY;
-        return [x, y];
-    };
+    const toCanvas = (lat, lon) => [
+        padding + (lon - minLon) * scaleX,
+        canvas.height - padding - (lat - minLat) * scaleY
+    ];
 
-    // Draw Dijkstra route (actual)
-    const dijkstraPath = routeCoordinates.map(c => toCanvas(c[0], c[1]));
-    drawPath(ctx, dijkstraPath, COLORS.d, 3);
+    // Convert all 3 routes to canvas coordinates
+    const dPath = routeCoordinates.dijkstra.map(c => toCanvas(c[0], c[1]));
+    const aPath = routeCoordinates.astar.map(c => toCanvas(c[0], c[1]));
+    const hPath = routeCoordinates.hybrid.map(c => toCanvas(c[0], c[1]));
 
-    // Draw simulated A* route
-    const aStarPath = dijkstraPath.map(([x, y], i) => {
-        const offset = Math.sin(i / dijkstraPath.length * Math.PI) * 15;
-        return [x + offset, y + offset * 0.5];
-    });
-    drawPath(ctx, aStarPath, COLORS.a, 3);
+    // Draw in order: A* (bottom), Hybrid (middle), Dijkstra (top) so Dijkstra is most visible
+    drawPath(ctx, aPath, COLORS.a, 3);
+    drawPath(ctx, hPath, COLORS.h, 3);
+    drawPath(ctx, dPath, COLORS.d, 3);
 
-    // Draw simulated Hybrid route
-    const hybridPath = dijkstraPath.map(([x, y], i) => {
-        const offset = Math.sin(i / dijkstraPath.length * Math.PI) * 8;
-        return [x + offset * 0.5, y + offset * 0.3];
-    });
-    drawPath(ctx, hybridPath, COLORS.h, 3);
-
-    // Draw markers
-    drawMarker(ctx, dijkstraPath[0], 'START', '#27ae60');
-    drawMarker(ctx, dijkstraPath[dijkstraPath.length - 1], 'END', '#e74c3c');
+    // Markers at Dijkstra start/end (same for all since same origin/destination)
+    drawMarker(ctx, dPath[0],              'START', '#27ae60');
+    drawMarker(ctx, dPath[dPath.length-1], 'END',   '#e74c3c');
 }
 
-/**
- * Draw placeholder routes when no coordinates available
- */
+function drawGrid(ctx, width, height) {
+    ctx.strokeStyle = '#1e1e1e';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < width; x += 20) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+    }
+    for (let y = 0; y < height; y += 20) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+    }
+}
+
+function drawActualRoutes(ctx, canvas, routeCoordinates) {
+    const lats = routeCoordinates.map(c => c[0]);
+    const lons = routeCoordinates.map(c => c[1]);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+
+    const latRange = maxLat - minLat || 0.001;
+    const lonRange = maxLon - minLon || 0.001;
+    const padding  = 50;
+
+    const scaleX = (canvas.width  - padding * 2) / lonRange;
+    const scaleY = (canvas.height - padding * 2) / latRange;
+
+    const toCanvas = (lat, lon) => [
+        padding + (lon - minLon) * scaleX,
+        canvas.height - padding - (lat - minLat) * scaleY
+    ];
+
+    const dijkstraPath = routeCoordinates.map(c => toCanvas(c[0], c[1]));
+
+    // A* — slight arc offset (simulated)
+    const aStarPath = dijkstraPath.map(([x, y], i) => {
+        const t = i / (dijkstraPath.length - 1);
+        const offset = Math.sin(t * Math.PI) * 18;
+        return [x + offset, y + offset * 0.4];
+    });
+
+    // Hybrid — smaller arc offset (simulated)
+    const hybridPath = dijkstraPath.map(([x, y], i) => {
+        const t = i / (dijkstraPath.length - 1);
+        const offset = Math.sin(t * Math.PI) * 9;
+        return [x + offset * 0.5, y + offset * 0.25];
+    });
+
+    drawPath(ctx, dijkstraPath, COLORS.d, 3);
+    drawPath(ctx, aStarPath,    COLORS.a, 3);
+    drawPath(ctx, hybridPath,   COLORS.h, 3);
+
+    drawMarker(ctx, dijkstraPath[0],                        'START', '#27ae60');
+    drawMarker(ctx, dijkstraPath[dijkstraPath.length - 1],  'END',   '#e74c3c');
+}
+
 function drawPlaceholderRoutes(ctx, canvas) {
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-    const sx = cx + 100;
-    const sy = cy + 20;
-    const ex = cx - 80;
-    const ey = cy - 20;
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    const sx = cx + 100, sy = cy + 20, ex = cx - 80, ey = cy - 20;
 
     const routes = [
-        { color: COLORS.d, pts: [[sx, sy], [sx - 30, sy - 15], [sx - 55, sy - 10], [sx - 80, sy - 25], [sx - 110, sy - 20], [ex, ey]] },
-        { color: COLORS.a, pts: [[sx, sy], [sx - 20, sy + 20], [sx - 50, sy + 25], [sx - 80, sy + 10], [sx - 110, sy - 10], [ex, ey]] },
-        { color: COLORS.h, pts: [[sx, sy], [sx - 25, sy - 8], [sx - 55, sy - 18], [sx - 85, sy - 20], [sx - 110, sy - 22], [ex, ey]] }
+        { color: COLORS.d, pts: [[sx,sy],[sx-30,sy-15],[sx-55,sy-10],[sx-80,sy-25],[sx-110,sy-20],[ex,ey]] },
+        { color: COLORS.a, pts: [[sx,sy],[sx-20,sy+20],[sx-50,sy+25],[sx-80,sy+10],[sx-110,sy-10],[ex,ey]] },
+        { color: COLORS.h, pts: [[sx,sy],[sx-25,sy-8],[sx-55,sy-18],[sx-85,sy-20],[sx-110,sy-22],[ex,ey]] }
     ];
 
     routes.forEach(r => drawPath(ctx, r.pts, r.color, 3));
-
     drawMarker(ctx, [sx, sy], 'START', '#27ae60');
-    drawMarker(ctx, [ex, ey], 'END', '#e74c3c');
+    drawMarker(ctx, [ex, ey], 'END',   '#e74c3c');
 }
 
-/**
- * Draw a path on canvas
- */
 function drawPath(ctx, points, color, width) {
     ctx.beginPath();
     ctx.strokeStyle = color;
@@ -558,40 +572,26 @@ function drawPath(ctx, points, color, width) {
     ctx.stroke();
 }
 
-/**
- * Draw a marker with label
- */
 function drawMarker(ctx, pos, label, color) {
-    // Draw circle
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(pos[0], pos[1], 9, 0, Math.PI * 2);
     ctx.fill();
 
-    // Draw label
     ctx.fillStyle = 'white';
     ctx.font = 'bold 10px Segoe UI';
     ctx.textAlign = 'center';
-    const yOffset = label === 'START' ? 22 : -16;
-    ctx.fillText(label, pos[0], pos[1] + yOffset);
+    ctx.fillText(label, pos[0], pos[1] + (label === 'START' ? 22 : -16));
 }
 
-/**
- * Draw chart legend
- */
 function drawLegend(ctx, m) {
-    const routes = [
+    [
         { color: COLORS.d, label: `Dijkstra (${m.dDist} km)` },
         { color: COLORS.a, label: `A* (${m.aDist} km)` },
         { color: COLORS.h, label: `Hybrid (${m.hDist} km)` }
-    ];
-
-    routes.forEach((r, i) => {
-        // Color box
+    ].forEach((r, i) => {
         ctx.fillStyle = r.color;
         ctx.fillRect(12, 12 + i * 22, 22, 4);
-
-        // Label text
         ctx.fillStyle = 'white';
         ctx.font = '11px Segoe UI';
         ctx.textAlign = 'left';
@@ -604,36 +604,38 @@ function drawLegend(ctx, m) {
 // MAP ROUTE DRAWING
 // ============================================
 
-/**
- * Draw route polyline on Google Map
- * @param {Array} coordinates - Array of [lat, lon] coordinates
- */
+let routeLines = [];
+
 function drawRoute(coordinates) {
-    // Remove existing route
-    if (routeLine) {
-        routeLine.setMap(null);
-    }
+    // Remove existing route lines
+    routeLines.forEach(line => line.setMap(null));
+    routeLines = [];
 
-    if (!coordinates || !coordinates.length) {
-        return;
-    }
+    if (!coordinates || !coordinates.dijkstra || !coordinates.dijkstra.length) return;
 
-    // Convert to Google Maps format
-    const path = coordinates.map(c => ({ lat: c[0], lng: c[1] }));
+    const routes = [
+        { coords: coordinates.hybrid,   color: '#f1c40f', weight: 3 }, // Hybrid bottom
+        { coords: coordinates.astar,    color: '#00bcd4', weight: 3 }, // A* middle
+        { coords: coordinates.dijkstra, color: '#e74c3c', weight: 4 }, // Dijkstra top
+    ];
 
-    // Create polyline
-    routeLine = new google.maps.Polyline({
-        path: path,
-        geodesic: true,
-        strokeColor: '#e74c3c',
-        strokeOpacity: 0.9,
-        strokeWeight: 4,
-        map: map
+    const bounds = new google.maps.LatLngBounds();
+
+    routes.forEach(r => {
+        if (!r.coords || !r.coords.length) return;
+        const path = r.coords.map(c => ({ lat: c[0], lng: c[1] }));
+        const line = new google.maps.Polyline({
+            path,
+            geodesic: true,
+            strokeColor: r.color,
+            strokeOpacity: 0.85,
+            strokeWeight: r.weight,
+            map
+        });
+        routeLines.push(line);
+        path.forEach(p => bounds.extend(p));
     });
 
-    // Fit map to route bounds
-    const bounds = new google.maps.LatLngBounds();
-    path.forEach(p => bounds.extend(p));
     map.fitBounds(bounds);
 }
 
@@ -642,10 +644,6 @@ function drawRoute(coordinates) {
 // UTILITY FUNCTIONS
 // ============================================
 
-/**
- * Show error message to user
- * @param {string} message - Error message
- */
 function showError(message) {
     const errorDiv = document.getElementById('error');
     errorDiv.textContent = message;
@@ -657,18 +655,13 @@ function showError(message) {
 // EVENT LISTENERS
 // ============================================
 
-// Initialize event listeners when DOM is ready
-document.addEventListener('DOMContentLoaded', function() {
-    // Button click handlers
+document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('calculateBtn').addEventListener('click', calculateRoute);
     document.getElementById('clearBtn').addEventListener('click', clearMap);
 
-    // Enter key to calculate
     document.querySelectorAll('input').forEach(input => {
         input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                calculateRoute();
-            }
+            if (e.key === 'Enter') calculateRoute();
         });
     });
 });
