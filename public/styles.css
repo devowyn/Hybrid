@@ -267,12 +267,15 @@ body {
     margin-bottom: 20px;
 }
 
-/* Chart Box */
+/* Chart Box - FIXED FOR STRETCHING */
 .chart-box {
     background: #16213e;
     border-radius: 10px;
     padding: 15px;
     border: 1px solid #0f3460;
+    height: 280px; /* Fixed height for consistent chart sizing */
+    display: flex;
+    flex-direction: column;
 }
 
 .chart-box h4 {
@@ -281,11 +284,26 @@ body {
     font-size: 0.85em;
     margin-bottom: 10px;
     font-weight: 600;
+    flex-shrink: 0; /* Prevent title from shrinking */
 }
 
+.chart-box canvas {
+    flex: 1; /* Chart takes remaining space */
+    max-height: 220px !important; /* Limit chart height */
+}
+
+/* Route Visualization Canvas - FIXED */
 .route-canvas-container {
     display: flex;
     justify-content: center;
+    align-items: center;
+    height: 200px; /* Fixed height */
+}
+
+.route-canvas-container canvas {
+    max-width: 100%;
+    height: 200px !important;
+    width: 600px !important;
 }
 
 /* Summary Box */
@@ -296,6 +314,8 @@ body {
     padding: 15px;
     color: #ccc;
     font-size: 0.8em;
+    height: 280px; /* Match chart height */
+    overflow-y: auto;
 }
 
 .summary-box h4 {
@@ -338,5 +358,9 @@ body {
 
     .charts-bottom {
         grid-template-columns: 1fr 1fr;
+    }
+    
+    .chart-box {
+        height: 250px; /* Slightly smaller on mobile */
     }
 }

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Route Calculator</title>
+    <title>Route Calculator - Python Backend</title>
     
     <!-- External CSS -->
     <link rel="stylesheet" href="styles.css">
@@ -69,10 +69,6 @@
                         <h4>🟡 Hybrid</h4>
                         <p>Adaptive intelligent</p>
                     </div>
-                    <div class="algo-card card-google" id="cardGoogle">
-                        <h4>🗺️ Google Maps</h4>
-                        <p>Real-time traffic</p>
-                    </div>
                 </div>
             </div>
 
@@ -80,10 +76,10 @@
             <div class="map-container">
                 <div id="map"></div>
                 
-                <!-- Map Controls -->
+                <!-- Map Controls (FIXED: Added IDs) -->
                 <div class="map-controls">
-                    <button onclick="setMode('start', event)">📍 Set Start</button>
-                    <button onclick="setMode('end', event)">🎯 Set End</button>
+                    <button id="setStartBtn">📍 Set Start</button>
+                    <button id="setEndBtn">🎯 Set End</button>
                 </div>
             </div>
         </div>
@@ -158,7 +154,7 @@
 
     </div>
 
-    <!-- External JavaScript -->
+    <!-- External JavaScript (UPDATED: Clean UI-only version) -->
     <script src="script.js"></script>
     
     <!-- Google Maps API -->
