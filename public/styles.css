@@ -292,18 +292,38 @@ body {
     max-height: 220px !important; /* Limit chart height */
 }
 
-/* Route Visualization Canvas - FIXED */
+/* Route Visualization - Full Width */
+.route-viz-full {
+    background: #16213e;
+    border-radius: 10px;
+    padding: 20px;
+    border: 1px solid #0f3460;
+    margin-top: 20px;
+    width: 100%;
+}
+
+.route-viz-full h4 {
+    text-align: center;
+    color: #ccc;
+    font-size: 1.1em;
+    margin-bottom: 20px;
+    font-weight: 600;
+}
+
 .route-canvas-container {
     display: flex;
     justify-content: center;
     align-items: center;
-    height: 200px; /* Fixed height */
+    background: #f0f0f0;
+    border-radius: 8px;
+    padding: 20px;
+    overflow: auto;
 }
 
 .route-canvas-container canvas {
+    display: block;
     max-width: 100%;
-    height: 200px !important;
-    width: 600px !important;
+    height: auto;
 }
 
 /* Summary Box */
