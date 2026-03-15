@@ -527,6 +527,38 @@ async def health_check():
     }
 
 
+@app.get("/api/road-network")
+async def get_road_network():
+    """
+    Returns all road edges in the loaded OSM graph as coordinate arrays.
+    Each edge is a list of [lat, lon] pairs representing the road geometry.
+    The frontend uses this to draw the real road map on the canvas.
+    """
+    if G is None:
+        raise HTTPException(status_code=503, detail="Graph not loaded")
+
+    edges_data = []
+    for u, v, data in G.edges(data=True):
+        # Use the 'geometry' attribute if available (gives curved road shape)
+        # Otherwise fall back to straight line between the two nodes
+        if 'geometry' in data:
+            coords = [[lat, lon] for lon, lat in data['geometry'].coords]
+        else:
+            u_data = G.nodes[u]
+            v_data = G.nodes[v]
+            coords = [
+                [u_data['y'], u_data['x']],
+                [v_data['y'], v_data['x']]
+            ]
+        edges_data.append(coords)
+
+    return {
+        "edges": edges_data,
+        "node_count": G.number_of_nodes(),
+        "edge_count": G.number_of_edges()
+    }
+
+
 @app.post("/api/calculate-route")
 async def calculate_route(request: RouteRequest):
     """Calculate routes using all three algorithms"""

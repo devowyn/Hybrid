@@ -300,6 +300,7 @@ body {
     border: 1px solid #0f3460;
     margin-top: 20px;
     width: 100%;
+    min-height: 900px; /* Ensure minimum height */
 }
 
 .route-viz-full h4 {
@@ -317,13 +318,15 @@ body {
     background: #f0f0f0;
     border-radius: 8px;
     padding: 20px;
-    overflow: auto;
+    overflow: visible; /* Changed from auto */
+    min-height: 850px; /* Ensure canvas is visible */
 }
 
 .route-canvas-container canvas {
-    display: block;
+    display: block !important;
     max-width: 100%;
-    height: auto;
+    height: auto !important;
+    border: 2px solid #ccc; /* Add border to see canvas bounds */
 }
 
 /* Summary Box */
