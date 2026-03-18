@@ -253,19 +253,19 @@ function displayResults(data) {
     document.getElementById('cardDijkstra').innerHTML = `
         <h4>🔴 Dijkstra</h4>
         <p>Distance: ${dijkstra.distanceKm} km</p>
-        <p>Time: ${dijkstra.timeMs} ms &nbsp;|&nbsp; Quality: ${dijkstra.qualityScore}/100</p>
+        <p>Time: ${dijkstra.timeMs} ms</p>
     `;
 
     document.getElementById('cardAStar').innerHTML = `
         <h4>🔵 A* Algorithm</h4>
         <p>Distance: ${astar.distanceKm} km</p>
-        <p>Time: ${astar.timeMs} ms &nbsp;|&nbsp; Quality: ${astar.qualityScore}/100</p>
+        <p>Time: ${astar.timeMs} ms</p>
     `;
 
     document.getElementById('cardHybrid').innerHTML = `
         <h4>🟡 Hybrid</h4>
         <p>Distance: ${hybrid.distanceKm} km</p>
-        <p>Time: ${hybrid.timeMs} ms &nbsp;|&nbsp; Quality: ${hybrid.qualityScore}/100</p>
+        <p>Time: ${hybrid.timeMs} ms</p>
     `;
 
     // Show algorithm summary
@@ -289,34 +289,28 @@ function updateSummaryBox(dijkstra, astar, hybrid) {
     const dDist = parseFloat(dijkstra.distanceKm);
     const aDist = parseFloat(astar.distanceKm);
     const hDist = parseFloat(hybrid.distanceKm);
-    
     const bestDist = Math.min(dDist, aDist, hDist).toFixed(4);
-    const bestQuality = Math.max(dijkstra.qualityScore, astar.qualityScore, hybrid.qualityScore);
 
     document.getElementById('summDijkstra').innerHTML = `
         <strong>Dijkstra:</strong>
         <p>• Pure shortest path</p>
         <p>• Distance: ${dijkstra.distanceKm} km</p>
-        <p>• Quality: ${dijkstra.qualityScore}/100</p>
     `;
 
     document.getElementById('summAStar').innerHTML = `
         <strong>A*:</strong>
         <p>• Highway-biased</p>
         <p>• Distance: ${astar.distanceKm} km</p>
-        <p>• Quality: ${astar.qualityScore}/100</p>
     `;
 
     document.getElementById('summHybrid').innerHTML = `
         <strong>Hybrid:</strong>
         <p>• Adaptive intelligent</p>
         <p>• Distance: ${hybrid.distanceKm} km</p>
-        <p>• Quality: ${hybrid.qualityScore}/100</p>
     `;
 
     document.getElementById('summBest').innerHTML = `
-        Best Distance: ${bestDist} km<br>
-        Best Quality: ${bestQuality}/100
+        Best Distance: ${bestDist} km
     `;
 }
 
@@ -331,71 +325,32 @@ function updateSummaryBox(dijkstra, astar, hybrid) {
  */
 function buildCharts(dijkstra, astar, hybrid) {
     console.log('📈 Building charts...');
-    
-    // Computation Time Chart
+
     buildBarChart(
         'chartCompTime',
         'Computation Time (ms)',
-        [
-            parseFloat(dijkstra.timeMs),
-            parseFloat(astar.timeMs),
-            parseFloat(hybrid.timeMs)
-        ]
+        [parseFloat(dijkstra.timeMs), parseFloat(astar.timeMs), parseFloat(hybrid.timeMs)]
     );
 
-    // Path Length Chart
     buildBarChart(
         'chartPathLength',
         'Path Length (km)',
-        [
-            parseFloat(dijkstra.distanceKm),
-            parseFloat(astar.distanceKm),
-            parseFloat(hybrid.distanceKm)
-        ]
+        [parseFloat(dijkstra.distanceKm), parseFloat(astar.distanceKm), parseFloat(hybrid.distanceKm)]
     );
 
-    // Peak Memory Chart
     buildBarChart(
         'chartMemory',
         'Peak Memory (MB)',
-        [
-            dijkstra.peakMemoryMb,
-            astar.peakMemoryMb,
-            hybrid.peakMemoryMb
-        ]
+        [dijkstra.peakMemoryMb, astar.peakMemoryMb, hybrid.peakMemoryMb]
     );
 
-    // Route Quality Score Chart
-    buildBarChart(
-        'chartQuality',
-        'Route Quality Score (0-100)',
-        [
-            dijkstra.qualityScore,
-            astar.qualityScore,
-            hybrid.qualityScore
-        ],
-        0,
-        100
-    );
-
-    // Path Optimality Chart (deviation from shortest)
-    const shortest = Math.min(
-        parseFloat(dijkstra.distanceKm),
-        parseFloat(astar.distanceKm),
-        parseFloat(hybrid.distanceKm)
-    );
-    
+    // Path Optimality — computed by Python backend
     buildBarChart(
         'chartOptimality',
-        'Path Optimality (% deviation)',
-        [
-            ((parseFloat(dijkstra.distanceKm) - shortest) / shortest * 100),
-            ((parseFloat(astar.distanceKm) - shortest) / shortest * 100),
-            ((parseFloat(hybrid.distanceKm) - shortest) / shortest * 100)
-        ]
+        'Path Optimality (% deviation from shortest)',
+        [dijkstra.pathOptimality, astar.pathOptimality, hybrid.pathOptimality]
     );
 
-    // Route Visualization Canvas (pass real coordinates from backend)
     buildRouteVisualization(dijkstra, astar, hybrid,
         dijkstra.coordinates, astar.coordinates, hybrid.coordinates);
 }
@@ -832,9 +787,9 @@ function drawStatsBox(ctx, dijkstra, astar, hybrid) {
     // Stats text
     ctx.font = '12px monospace';
     const stats = [
-        `Dijkstra: ${dijkstra.distanceKm} km | Q: ${dijkstra.qualityScore}/100`,
-        `A*: ${astar.distanceKm} km | Q: ${astar.qualityScore}/100`,
-        `Hybrid: ${hybrid.distanceKm} km | Q: ${hybrid.qualityScore}/100`,
+        `Dijkstra: ${dijkstra.distanceKm} km`,
+        `A*: ${astar.distanceKm} km`,
+        `Hybrid: ${hybrid.distanceKm} km`,
         '',
         `Graph: ${graphNodes} nodes, ${graphEdges} edges`
     ];
@@ -978,13 +933,7 @@ function drawPlaceholderRoutes(ctx, canvas) {
  */
 function drawMapRoutes(routes) {
     console.log('🗺️  Drawing routes on map...');
-    console.log('Route data received:', {
-        dijkstra: routes.dijkstra ? routes.dijkstra.length + ' points' : 'none',
-        astar: routes.astar ? routes.astar.length + ' points' : 'none',
-        hybrid: routes.hybrid ? routes.hybrid.length + ' points' : 'none'
-    });
-    
-    // Remove existing route lines
+
     routeLines.forEach(line => line.setMap(null));
     routeLines = [];
 
@@ -995,34 +944,50 @@ function drawMapRoutes(routes) {
 
     const bounds = new google.maps.LatLngBounds();
 
-    // Draw all three routes (order: hybrid, astar, dijkstra so dijkstra is on top)
+    // Strategy: When Dijkstra and Hybrid share the same path they overlap.
+    // Fix: Draw Dijkstra as a wide semi-transparent base, A* as dashed,
+    // and Hybrid as a thin solid line on top — all three always visible.
     const routeConfigs = [
-        { coords: routes.hybrid, color: COLORS.hybrid, weight: 3 },
-        { coords: routes.astar, color: COLORS.astar, weight: 3 },
-        { coords: routes.dijkstra, color: COLORS.dijkstra, weight: 4 }
+        // Dijkstra — wide, semi-transparent base so Hybrid shows on top
+        { coords: routes.dijkstra, color: COLORS.dijkstra,
+          weight: 10, opacity: 0.45, zIndex: 1, dashed: false },
+        // A* — medium dashed so it stands out from the solid lines
+        { coords: routes.astar,    color: COLORS.astar,
+          weight: 5,  opacity: 0.9,  zIndex: 2, dashed: true  },
+        // Hybrid — thin solid line on very top, always visible
+        { coords: routes.hybrid,   color: COLORS.hybrid,
+          weight: 4,  opacity: 1.0,  zIndex: 3, dashed: false }
     ];
 
-    routeConfigs.forEach(config => {
-        if (!config.coords || !config.coords.length) return;
+    routeConfigs.forEach(({ coords, color, weight, opacity, zIndex, dashed }) => {
+        if (!coords || !coords.length) return;
+        const path = coords.map(c => ({ lat: c[0], lng: c[1] }));
 
-        const path = config.coords.map(c => ({ lat: c[0], lng: c[1] }));
-        
+        const icons = dashed ? [{
+            icon: {
+                path        : 'M 0,-1 0,1',
+                strokeOpacity: 1,
+                scale        : 3
+            },
+            offset: '0',
+            repeat: '12px'
+        }] : [];
+
         const polyline = new google.maps.Polyline({
-            path: path,
-            geodesic: true,
-            strokeColor: config.color,
-            strokeOpacity: 0.85,
-            strokeWeight: config.weight,
-            map: map
+            path,
+            geodesic      : true,
+            strokeColor   : color,
+            strokeOpacity : dashed ? 0 : opacity,
+            strokeWeight  : weight,
+            zIndex,
+            icons,
+            map
         });
 
         routeLines.push(polyline);
-        
-        // Extend bounds
         path.forEach(p => bounds.extend(p));
     });
 
-    // Fit map to show all routes
     map.fitBounds(bounds);
 }
 
