@@ -465,6 +465,11 @@ function buildRouteVisualization(dijkstra, astar, hybrid, dCoords, aCoords, hCoo
     const canvas = document.getElementById('chartRouteViz');
     if (!canvas) { console.error('❌ Canvas element not found!'); return; }
 
+    // ── Set canvas pixel size to match its display size ──────
+    // Without this, canvas.width=1100 but CSS renders it smaller,
+    // causing all coordinates to be clipped or off-screen.
+    canvas.width  = canvas.offsetWidth  || 1100;
+    canvas.height = canvas.offsetHeight || 600;
     const W = canvas.width;
     const H = canvas.height;
     const ctx = canvas.getContext('2d');
@@ -480,23 +485,16 @@ function buildRouteVisualization(dijkstra, astar, hybrid, dCoords, aCoords, hCoo
         ...(hCoords || [])
     ];
 
-    // ── Compute bounding box ─────────────────────────────────
-    // Include road network edges in the bbox so they fill the canvas correctly
-    const allNetworkPts = roadNetworkEdges ? roadNetworkEdges.flat() : [];
-    const bboxPts = allPts.length > 0 ? allPts : allNetworkPts;
-
-    if (bboxPts.length === 0) {
+    if (allPts.length === 0) {
         drawRoadNetwork(ctx, W, H, null);
         drawVisualizationHeader(ctx, dijkstra, astar, hybrid);
         drawStatsBox(ctx, dijkstra, astar, hybrid, W, H);
         return;
     }
 
+    // ── Bounding box from route points only ──────────────────
     let minLat =  Infinity, maxLat = -Infinity;
     let minLng =  Infinity, maxLng = -Infinity;
-
-    // Base bounding box on route points only (so routes are prominent),
-    // but extend with network points clipped to a reasonable area around the routes
     allPts.forEach(([lat, lng]) => {
         if (lat < minLat) minLat = lat;
         if (lat > maxLat) maxLat = lat;
@@ -504,25 +502,14 @@ function buildRouteVisualization(dijkstra, astar, hybrid, dCoords, aCoords, hCoo
         if (lng > maxLng) maxLng = lng;
     });
 
-    // If no route coords, use full network bbox
-    if (allPts.length === 0) {
-        allNetworkPts.forEach(([lat, lng]) => {
-            if (lat < minLat) minLat = lat;
-            if (lat > maxLat) maxLat = lat;
-            if (lng < minLng) minLng = lng;
-            if (lng > maxLng) maxLng = lng;
-        });
-    }
-
-    // Add margin
+    // Add 15% margin so routes are not flush against the edges
     const latRange = (maxLat - minLat) || 0.005;
     const lngRange = (maxLng - minLng) || 0.005;
-    const m = 0.15;
-    minLat -= latRange * m;  maxLat += latRange * m;
-    minLng -= lngRange * m;  maxLng += lngRange * m;
+    minLat -= latRange * 0.15;  maxLat += latRange * 0.15;
+    minLng -= lngRange * 0.15;  maxLng += lngRange * 0.15;
 
-    // ── Coordinate → pixel ───────────────────────────────────
-    const PAD = 60;
+    // ── Coordinate → pixel (flip Y so north is up) ───────────
+    const PAD = 70;
     function px(lat, lng) {
         return {
             x: PAD + ((lng - minLng) / (maxLng - minLng)) * (W - PAD * 2),
@@ -530,18 +517,23 @@ function buildRouteVisualization(dijkstra, astar, hybrid, dCoords, aCoords, hCoo
         };
     }
 
-    // ── Draw OSM road network ────────────────────────────────
+    // ── Draw OSM road network first (background layer) ───────
+    // If roadNetworkEdges is still null, try fetching again
+    if (roadNetworkEdges === null) {
+        fetchRoadNetwork();
+    }
     drawRoadNetwork(ctx, W, H, px);
 
-    // ── Draw routes ──────────────────────────────────────────
+    // ── Draw routes (Dijkstra bottom, A* middle, Hybrid top) ─
     const routeDefs = [
-        { coords: dCoords, color: COLORS.dijkstra, width: 8 },
-        { coords: aCoords, color: COLORS.astar,    width: 8 },
-        { coords: hCoords, color: COLORS.hybrid,   width: 8 }
+        { coords: dCoords, color: COLORS.dijkstra, width: 5 },
+        { coords: aCoords, color: COLORS.astar,    width: 5 },
+        { coords: hCoords, color: COLORS.hybrid,   width: 6 }
     ];
 
     routeDefs.forEach(({ coords, color, width }) => {
         if (!coords || coords.length < 2) return;
+        ctx.save();
         ctx.strokeStyle = color;
         ctx.lineWidth   = width;
         ctx.lineCap     = 'round';
@@ -552,27 +544,39 @@ function buildRouteVisualization(dijkstra, astar, hybrid, dCoords, aCoords, hCoo
             if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         });
         ctx.stroke();
+        ctx.restore();
     });
 
     // ── START marker ─────────────────────────────────────────
     const startCoord = (dCoords && dCoords[0]) || (aCoords && aCoords[0]) || (hCoords && hCoords[0]);
     if (startCoord) {
         const { x, y } = px(startCoord[0], startCoord[1]);
-        // Green pill label
-        ctx.fillStyle = '#00b300';
-        roundRect(ctx, x - 34, y - 26, 68, 22, 6);
-        ctx.fill();
-        ctx.fillStyle = '#000';
-        ctx.font = 'bold 13px Segoe UI';
-        ctx.textAlign = 'center';
-        ctx.fillText('START', x, y - 10);
-        // Green circle
-        ctx.fillStyle   = '#00FF00';
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth   = 3;
+
+        // Outer green circle
+        ctx.save();
         ctx.beginPath();
-        ctx.arc(x, y, 14, 0, Math.PI * 2);
-        ctx.fill(); ctx.stroke();
+        ctx.arc(x, y, 16, 0, Math.PI * 2);
+        ctx.fillStyle   = '#00CC00';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth   = 3;
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        // Label pill above marker
+        ctx.save();
+        ctx.fillStyle = '#00CC00';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1.5;
+        roundRect(ctx, x - 28, y - 38, 56, 20, 5);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle    = '#000000';
+        ctx.font         = 'bold 11px Arial';
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('START', x, y - 28);
+        ctx.restore();
     }
 
     // ── END marker ───────────────────────────────────────────
@@ -580,22 +584,40 @@ function buildRouteVisualization(dijkstra, astar, hybrid, dCoords, aCoords, hCoo
     const endCoord = lastOf(dCoords) || lastOf(aCoords) || lastOf(hCoords);
     if (endCoord) {
         const { x, y } = px(endCoord[0], endCoord[1]);
-        // Red rect label
-        ctx.fillStyle = '#cc0000';
-        roundRect(ctx, x - 24, y - 10, 48, 22, 4);
+
+        // Red rectangle marker
+        ctx.save();
+        ctx.fillStyle   = '#CC0000';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth   = 3;
+        ctx.beginPath();
+        ctx.rect(x - 14, y - 14, 28, 28);
         ctx.fill();
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 13px Segoe UI';
-        ctx.textAlign = 'center';
-        ctx.fillText('END', x, y + 6);
+        ctx.stroke();
+        ctx.restore();
+
+        // Label pill
+        ctx.save();
+        ctx.fillStyle   = '#CC0000';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth   = 1.5;
+        roundRect(ctx, x - 20, y - 38, 40, 20, 5);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle    = '#FFFFFF';
+        ctx.font         = 'bold 11px Arial';
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('END', x, y - 28);
+        ctx.restore();
     }
 
-    // ── Legend + Stats ───────────────────────────────────────
+    // ── Legend + Stats (drawn last so they sit on top) ───────
     drawVisualizationHeader(ctx, dijkstra, astar, hybrid);
     drawStatsBox(ctx, dijkstra, astar, hybrid, W, H);
 
-    console.log('🎉 Route visualization complete —', allPts.length, 'route pts,',
-                (roadNetworkEdges || []).length, 'road edges');
+    console.log('✅ Visualization: W=' + W + ' H=' + H + ' pts=' + allPts.length
+        + ' roads=' + (roadNetworkEdges || []).length);
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -641,23 +663,27 @@ async function fetchRoadNetwork() {
  * @param {Function} px - coord-to-pixel function (lat,lng) => {x,y}
  */
 function drawRoadNetwork(ctx, W, H, px) {
-    // If no real data, draw faint grid as fallback
     if (!roadNetworkEdges || roadNetworkEdges.length === 0) {
-        ctx.strokeStyle = '#d0d0d0';
+        // Fallback: faint grid only
+        ctx.save();
+        ctx.strokeStyle = 'rgba(180,180,180,0.4)';
         ctx.lineWidth = 0.5;
-        for (let x = 100; x < W - 100; x += 50) {
-            ctx.beginPath(); ctx.moveTo(x, 80); ctx.lineTo(x, H - 80); ctx.stroke();
+        for (let x = 80; x < W - 80; x += 60) {
+            ctx.beginPath(); ctx.moveTo(x, 60); ctx.lineTo(x, H - 60); ctx.stroke();
         }
-        for (let y = 80; y < H - 80; y += 40) {
+        for (let y = 60; y < H - 60; y += 50) {
             ctx.beginPath(); ctx.moveTo(80, y); ctx.lineTo(W - 80, y); ctx.stroke();
         }
+        ctx.restore();
         return;
     }
 
-    // Draw actual OSM road edges
-    ctx.strokeStyle = '#b0b0b0';
-    ctx.lineWidth = 1.2;
-    ctx.lineCap = 'round';
+    // Draw real OSM road edges — styled like the reference image (grey roads on white)
+    ctx.save();
+    ctx.strokeStyle = '#aaaaaa';
+    ctx.lineWidth   = 1.0;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
 
     roadNetworkEdges.forEach(edge => {
         if (!edge || edge.length < 2) return;
@@ -668,6 +694,7 @@ function drawRoadNetwork(ctx, W, H, px) {
         });
         ctx.stroke();
     });
+    ctx.restore();
 }
 
 

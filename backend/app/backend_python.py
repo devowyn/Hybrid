@@ -16,6 +16,7 @@ import time
 import tracemalloc
 import psutil
 import os
+import heapq
 from pathlib import Path
 import logging
 
@@ -379,98 +380,435 @@ def get_route_coordinates(route, G):
     return coords
 
 
+# ============================================
+# CUSTOM ALGORITHM IMPLEMENTATIONS
+# Formulas implemented directly — no NetworkX
+# path-finding calls used below.
+# ============================================
+
+def _reconstruct_path(prev, origin, destination):
+    """
+    Walk the 'prev' dictionary backwards from destination
+    to origin to rebuild the ordered node list.
+    """
+    path, node = [], destination
+    while node in prev:
+        path.append(node)
+        node = prev[node]
+    path.append(origin)
+    path.reverse()
+    return path
+
+
+def dijkstra_search(G, origin, destination, weight="dijkstra_cost"):
+    """
+    Custom Dijkstra implementation.
+
+    Core relaxation formula (GeeksForGeeks / CLRS):
+        dist[v] = min(dist[v],  dist[u] + w(u, v))
+
+    Uses a min-heap (priority queue) to always expand the
+    unvisited node with the lowest known distance first.
+
+    Parameters
+    ----------
+    G          : NetworkX graph with edge attribute `weight`
+    origin     : source node id
+    destination: target node id
+    weight     : edge attribute name to use as w(u,v)
+
+    Returns
+    -------
+    list of node ids representing the shortest path
+    """
+    # Initialise every node's tentative distance to infinity
+    dist = {node: float('inf') for node in G.nodes}
+    dist[origin] = 0          # distance from source to itself is 0
+    prev = {}                  # predecessor map for path reconstruction
+    visited = set()
+
+    # Priority queue entries: (dist[u], u)
+    pq = [(0, origin)]
+
+    while pq:
+        d_u, u = heapq.heappop(pq)
+
+        # Skip stale entries (already found a shorter path to u)
+        if u in visited:
+            continue
+        visited.add(u)
+
+        # Early exit — optimal path to destination found
+        if u == destination:
+            break
+
+        # Relax all edges leaving u
+        for v in G.neighbors(u):
+            if v in visited:
+                continue
+
+            edge_data = G[u][v][0]
+            w_uv = edge_data.get(weight, edge_data.get("length", 1))
+
+            # ── DIJKSTRA FORMULA ──────────────────────────────────
+            # dist[v] = min(dist[v],  dist[u] + w(u, v))
+            new_dist = dist[u] + w_uv
+            if new_dist < dist[v]:
+                dist[v] = new_dist          # relaxation
+                prev[v] = u
+                heapq.heappush(pq, (dist[v], v))
+
+    return _reconstruct_path(prev, origin, destination)
+
+
+def astar_search(G, origin, destination, weight="astar_cost", heuristic_scale=1.0):
+    """
+    Custom A* implementation.
+
+    Core formula (standard A* / ISPRS paper):
+        f(n) = g(n) + h(n)
+
+    where:
+        g(n) = actual accumulated cost from origin to node n
+        h(n) = Euclidean distance heuristic from n to destination
+               (admissible — never overestimates true cost)
+        f(n) = estimated total cost of path through n
+
+    The node with the lowest f(n) is always expanded next.
+
+    Parameters
+    ----------
+    G               : NetworkX graph
+    origin          : source node id
+    destination     : target node id
+    weight          : edge attribute name to use as w(u,v)
+    heuristic_scale : multiplier on h(n) (1.0 = standard A*)
+
+    Returns
+    -------
+    list of node ids representing the optimal path
+    """
+    # g(n): actual cost from origin to each node
+    g = {node: float('inf') for node in G.nodes}
+    g[origin] = 0
+
+    prev = {}
+    visited = set()
+
+    def h(n):
+        """
+        Euclidean heuristic  h(n) = sqrt((x1-x2)^2 + (y1-y2)^2)
+        Uses lon/lat coordinates stored in OSM node attributes.
+        """
+        x1, y1 = G.nodes[n]['x'],           G.nodes[n]['y']
+        x2, y2 = G.nodes[destination]['x'], G.nodes[destination]['y']
+        return heuristic_scale * ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+
+    # Priority queue entries: (f(n), n)
+    # f(origin) = g(origin) + h(origin) = 0 + h(origin)
+    pq = [(g[origin] + h(origin), origin)]
+
+    while pq:
+        f_u, u = heapq.heappop(pq)
+
+        if u in visited:
+            continue
+        visited.add(u)
+
+        if u == destination:
+            break
+
+        for v in G.neighbors(u):
+            if v in visited:
+                continue
+
+            edge_data = G[u][v][0]
+            w_uv = edge_data.get(weight, edge_data.get("length", 1))
+
+            # ── A* FORMULA ────────────────────────────────────────
+            # g(v)  = g(u) + w(u, v)          ← actual cost so far
+            # h(v)  = euclidean distance to destination
+            # f(v)  = g(v) + h(v)             ← estimated total cost
+            g_new = g[u] + w_uv              # g(n)
+            if g_new < g[v]:
+                g[v]   = g_new
+                f_v    = g_new + h(v)         # f(n) = g(n) + h(n)
+                prev[v] = u
+                heapq.heappush(pq, (f_v, v))
+
+    return _reconstruct_path(prev, origin, destination)
+
+
+# ============================================
+# ALGORITHM ENTRY POINTS
+# (wrap custom search with timing + memory)
+# ============================================
+
 def calculate_dijkstra(origin, destination):
-    """Run Dijkstra algorithm"""
-    logger.info("Running Dijkstra...")
-    
+    """
+    Dijkstra — pure shortest path.
+    Formula:  dist[v] = min(dist[v], dist[u] + w(u,v))
+    Edge weight used: dijkstra_cost = base_length (OSM metres)
+    """
+    logger.info("Running Dijkstra (custom implementation)...")
+
     tracemalloc.start()
-    mem_before = get_memory_usage()
     start_time = time.time()
-    
-    route = nx.shortest_path(G, origin, destination, weight="dijkstra_cost", method="dijkstra")
-    
+
+    # ── Custom Dijkstra — formula is inside dijkstra_search() ──
+    route = dijkstra_search(G, origin, destination, weight="dijkstra_cost")
+
     end_time = time.time()
-    mem_after = get_memory_usage()
     current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
-    
-    length = route_length(route, G)
+
+    length  = route_length(route, G)
     quality = calculate_quality_score(route, G)
-    coords = get_route_coordinates(route, G)
-    
+    coords  = get_route_coordinates(route, G)
+
     return {
-        "distanceKm": f"{length / 1000:.4f}",
-        "timeMs": f"{(end_time - start_time) * 1000:.2f}",
-        "nodes": len(route),
-        "coordinates": coords,
-        "qualityScore": round(quality, 1),
-        "peakMemoryMb": round(peak / 1024 / 1024, 2)
+        "distanceKm"   : f"{length / 1000:.4f}",
+        "timeMs"       : f"{(end_time - start_time) * 1000:.2f}",
+        "nodes"        : len(route),
+        "coordinates"  : coords,
+        "qualityScore" : round(quality, 1),
+        "peakMemoryMb" : round(peak / 1024 / 1024, 2)
     }
 
 
 def calculate_astar(origin, destination):
-    """Run A* algorithm"""
-    logger.info("Running A*...")
-    
+    """
+    A* — highway-biased routing.
+    Formula:  f(n) = g(n) + h(n)
+    Edge weight used: astar_cost = base_length × highway_factor
+    Heuristic h(n): Euclidean distance to destination
+    """
+    logger.info("Running A* (custom implementation)...")
+
     tracemalloc.start()
-    mem_before = get_memory_usage()
     start_time = time.time()
-    
-    route = nx.astar_path(
-        G, origin, destination,
-        heuristic=lambda u, v: euclidean_heuristic(u, v, G),
-        weight="astar_cost"
-    )
-    
+
+    # ── Custom A* — formula is inside astar_search() ───────────
+    route = astar_search(G, origin, destination,
+                         weight="astar_cost",
+                         heuristic_scale=1.0)
+
     end_time = time.time()
-    mem_after = get_memory_usage()
     current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
-    
-    length = route_length(route, G)
+
+    length  = route_length(route, G)
     quality = calculate_quality_score(route, G)
-    coords = get_route_coordinates(route, G)
-    
+    coords  = get_route_coordinates(route, G)
+
     return {
-        "distanceKm": f"{length / 1000:.4f}",
-        "timeMs": f"{(end_time - start_time) * 1000:.2f}",
-        "nodes": len(route),
-        "coordinates": coords,
-        "qualityScore": round(quality, 1),
-        "peakMemoryMb": round(peak / 1024 / 1024, 2)
+        "distanceKm"   : f"{length / 1000:.4f}",
+        "timeMs"       : f"{(end_time - start_time) * 1000:.2f}",
+        "nodes"        : len(route),
+        "coordinates"  : coords,
+        "qualityScore" : round(quality, 1),
+        "peakMemoryMb" : round(peak / 1024 / 1024, 2)
     }
 
 
+def get_lambda(highway_type):
+    """
+    Dynamic λ(road_type) — controls how much A*'s heuristic
+    guidance influences the Hybrid cost relative to Dijkstra's
+    shortest-path guarantee.
+
+    Derivation logic:
+      - Major roads (primary/trunk): λ is HIGH (→ 0.7)
+        The heuristic is trusted more because these roads are
+        efficient to follow; A* guidance helps us reach the
+        destination quickly along known-good corridors.
+
+      - Secondary roads: λ = 0.5 (balanced)
+        Equal weight to distance and heuristic — road quality
+        is acceptable but not dominant.
+
+      - Tertiary roads: λ = 0.4
+        Slightly more weight to Dijkstra's physical distance
+        because tertiary roads vary more in quality.
+
+      - Residential roads: λ is LOW (→ 0.3)
+        Less trust in the heuristic; the algorithm should
+        prefer staying short (Dijkstra) rather than being
+        guided towards these roads.
+
+      - Service / unclassified: λ is VERY LOW (→ 0.2)
+        Maximum weight on Dijkstra's pure distance to avoid
+        long detours on poor-quality roads.
+
+    Range:  0.2 ≤ λ ≤ 0.7
+    Constraint: (1 - λ) is the Dijkstra weight, always > 0
+    """
+    lambda_map = {
+        'primary'       : 0.7,
+        'primary_link'  : 0.7,
+        'trunk'         : 0.7,
+        'trunk_link'    : 0.7,
+        'secondary'     : 0.5,
+        'secondary_link': 0.5,
+        'tertiary'      : 0.4,
+        'tertiary_link' : 0.4,
+        'residential'   : 0.3,
+        'service'       : 0.2,
+        'unclassified'  : 0.2,
+    }
+    return lambda_map.get(highway_type, 0.4)   # default: tertiary-like
+
+
+def hybrid_search(G, origin, destination):
+    """
+    Adaptive Hybrid Algorithm.
+
+    ═══════════════════════════════════════════════════════════
+    FORMULA
+    ═══════════════════════════════════════════════════════════
+
+    H(n) = (1 - λ) · g_d(n)  +  λ · [g_h(n) + h(n)]
+
+    where:
+      g_d(n) = Σ base_length(u,v)          ← Dijkstra component
+                 (u,v) ∈ path               pure physical distance
+
+      g_h(n) = Σ hybrid_cost(u,v)          ← A* component (cost)
+                 (u,v) ∈ path               = base_length × R×L×S×W×T
+
+      h(n)   = √[(x_n - x_dest)²           ← A* component (heuristic)
+                + (y_n - y_dest)²]          Euclidean distance to goal
+
+      λ      = λ(road_type) ∈ [0.2, 0.7]  ← dynamic balance factor
+               derived from the highway type of edge (u→v)
+
+    ═══════════════════════════════════════════════════════════
+    BEHAVIOUR BY λ VALUE
+    ═══════════════════════════════════════════════════════════
+      λ → 0.7  (primary/trunk):
+          H(n) = 0.3·g_d + 0.7·[g_h + h]
+          A* guidance dominates → fast, efficient major-road routing
+
+      λ = 0.5  (secondary):
+          H(n) = 0.5·g_d + 0.5·[g_h + h]
+          Balanced → equal respect for distance and quality
+
+      λ → 0.2  (service/unclassified):
+          H(n) = 0.8·g_d + 0.2·[g_h + h]
+          Dijkstra dominates → stay short, avoid poor-road detours
+    ═══════════════════════════════════════════════════════════
+
+    Parameters
+    ----------
+    G           : NetworkX MultiDiGraph (OSM road network)
+    origin      : source node id
+    destination : target node id
+
+    Returns
+    -------
+    list of node ids — the optimal hybrid path
+    """
+
+    def h(n):
+        """
+        Euclidean heuristic  h(n) = √[(x₁−x₂)² + (y₁−y₂)²]
+        Admissible: never overestimates true geographic distance.
+        """
+        x1, y1 = G.nodes[n]['x'],           G.nodes[n]['y']
+        x2, y2 = G.nodes[destination]['x'], G.nodes[destination]['y']
+        return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+
+    # Accumulated costs from origin to each node
+    g_d = {node: float('inf') for node in G.nodes}   # Dijkstra distance
+    g_h = {node: float('inf') for node in G.nodes}   # Hybrid weighted cost
+    g_d[origin] = 0.0
+    g_h[origin] = 0.0
+
+    prev    = {}
+    visited = set()
+
+    # Initial priority: H(origin) = (1-λ)·0 + λ·h(origin)
+    # λ at origin uses default (0.4) since no edge yet
+    lam0 = 0.4
+    pq   = [((1 - lam0) * 0.0 + lam0 * h(origin), origin)]
+
+    while pq:
+        H_u, u = heapq.heappop(pq)
+
+        if u in visited:
+            continue
+        visited.add(u)
+
+        if u == destination:
+            break
+
+        for v in G.neighbors(u):
+            if v in visited:
+                continue
+
+            edge      = G[u][v][0]
+            base      = edge.get("length",      1.0)
+            hybrid_w  = edge.get("hybrid_cost", base)
+
+            # Determine dynamic λ from this edge's road type
+            hw = edge.get("highway", "residential")
+            if isinstance(hw, list):
+                hw = hw[0]
+            lam = get_lambda(hw)
+
+            # ── HYBRID FORMULA ──────────────────────────────────
+            # g_d(v) = g_d(u) + base_length(u,v)     [Dijkstra]
+            # g_h(v) = g_h(u) + hybrid_cost(u,v)     [A* cost]
+            # H(v)   = (1-λ)·g_d(v) + λ·[g_h(v) + h(v)]
+            new_g_d = g_d[u] + base
+            new_g_h = g_h[u] + hybrid_w
+            H_v     = (1 - lam) * new_g_d + lam * (new_g_h + h(v))
+
+            if new_g_d < g_d[v]:       # improvement found
+                g_d[v]  = new_g_d
+                g_h[v]  = new_g_h
+                prev[v] = u
+                heapq.heappush(pq, (H_v, v))
+
+    return _reconstruct_path(prev, origin, destination)
+
+
 def calculate_hybrid(origin, destination):
-    """Run Hybrid algorithm"""
-    logger.info("Running Hybrid...")
-    
+    """
+    Entry point for the Hybrid algorithm.
+
+    Formula:  H(n) = (1 - λ) · g_d(n)  +  λ · [g_h(n) + h(n)]
+
+    λ = λ(road_type) — dynamic balance factor per edge:
+        primary/trunk   → λ = 0.7   (A* guidance dominates)
+        secondary       → λ = 0.5   (balanced)
+        tertiary        → λ = 0.4   (slight Dijkstra preference)
+        residential     → λ = 0.3   (Dijkstra preferred)
+        service/unclas. → λ = 0.2   (Dijkstra strongly preferred)
+    """
+    logger.info("Running Hybrid (dynamic-λ formula)...")
+
     tracemalloc.start()
-    mem_before = get_memory_usage()
     start_time = time.time()
-    
-    route = nx.astar_path(
-        G, origin, destination,
-        heuristic=lambda u, v: euclidean_heuristic(u, v, G) * 1.0,
-        weight="hybrid_cost"
-    )
-    
+
+    # ── Hybrid search using H(n) = (1-λ)·g_d(n) + λ·[g_h(n)+h(n)] ──
+    route = hybrid_search(G, origin, destination)
+
     end_time = time.time()
-    mem_after = get_memory_usage()
     current, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()
-    
-    length = route_length(route, G)
+
+    length  = route_length(route, G)
     quality = calculate_quality_score(route, G)
-    coords = get_route_coordinates(route, G)
-    
+    coords  = get_route_coordinates(route, G)
+
     return {
-        "distanceKm": f"{length / 1000:.4f}",
-        "timeMs": f"{(end_time - start_time) * 1000:.2f}",
-        "nodes": len(route),
-        "coordinates": coords,
-        "qualityScore": round(quality, 1),
-        "peakMemoryMb": round(peak / 1024 / 1024, 2)
+        "distanceKm"   : f"{length / 1000:.4f}",
+        "timeMs"       : f"{(end_time - start_time) * 1000:.2f}",
+        "nodes"        : len(route),
+        "coordinates"  : coords,
+        "qualityScore" : round(quality, 1),
+        "peakMemoryMb" : round(peak / 1024 / 1024, 2)
     }
 
 
@@ -524,38 +862,6 @@ async def health_check():
         "status": "OK",
         "graph_nodes": G.number_of_nodes() if G else 0,
         "graph_edges": G.number_of_edges() if G else 0
-    }
-
-
-@app.get("/api/road-network")
-async def get_road_network():
-    """
-    Returns all road edges in the loaded OSM graph as coordinate arrays.
-    Each edge is a list of [lat, lon] pairs representing the road geometry.
-    The frontend uses this to draw the real road map on the canvas.
-    """
-    if G is None:
-        raise HTTPException(status_code=503, detail="Graph not loaded")
-
-    edges_data = []
-    for u, v, data in G.edges(data=True):
-        # Use the 'geometry' attribute if available (gives curved road shape)
-        # Otherwise fall back to straight line between the two nodes
-        if 'geometry' in data:
-            coords = [[lat, lon] for lon, lat in data['geometry'].coords]
-        else:
-            u_data = G.nodes[u]
-            v_data = G.nodes[v]
-            coords = [
-                [u_data['y'], u_data['x']],
-                [v_data['y'], v_data['x']]
-            ]
-        edges_data.append(coords)
-
-    return {
-        "edges": edges_data,
-        "node_count": G.number_of_nodes(),
-        "edge_count": G.number_of_edges()
     }
 
 
