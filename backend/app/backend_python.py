@@ -24,7 +24,7 @@ BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 
 GRAPH_CENTER = (16.42271, 120.59911)
-GRAPH_RADIUS = 1100
+GRAPH_RADIUS = 1700
 
 ALLOWED_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
