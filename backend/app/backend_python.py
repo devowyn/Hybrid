@@ -1,5 +1,3 @@
-
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -24,7 +22,7 @@ BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 
 GRAPH_CENTER = (16.42271, 120.59911)
-GRAPH_RADIUS = 1700
+GRAPH_RADIUS = 1100
 
 ALLOWED_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
@@ -130,7 +128,16 @@ def build_graph():
     logger.info(f"Building OSM graph (center: {GRAPH_CENTER}, radius: {GRAPH_RADIUS}m)...")
     
 
-    G = ox.graph_from_point(GRAPH_CENTER, dist=GRAPH_RADIUS, network_type="drive")
+    # Custom filter: only real driveable roads — excludes footways, paths, steps
+    # This prevents routing through non-passable areas like riverbanks
+    custom_filter = (
+        '["highway"]["highway"!~"footway|path|steps|pedestrian|track|'
+        'bridleway|cycleway|corridor|elevator|escalator|proposed|'
+        'construction|abandoned|platform|raceway|rest_area"]'
+        '["access"!~"private|no"]'
+    )
+    G = ox.graph_from_point(GRAPH_CENTER, dist=GRAPH_RADIUS,
+                            custom_filter=custom_filter)
     
     logger.info(f"   Nodes: {G.number_of_nodes()}, Edges: {G.number_of_edges()}")
     
@@ -318,9 +325,33 @@ def euclidean_heuristic(u, v, G):
     return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
 def get_route_coordinates(route, G):
+    """
+    Returns coordinates following actual OSM road geometry,
+    not just straight lines between node centers.
+    This makes routes visually follow the road curves correctly.
+    """
     coords = []
-    for node in route:
-        coords.append([G.nodes[node]['y'], G.nodes[node]['x']])
+    for i, node in enumerate(route):
+        if i == 0:
+            # Always include the first node
+            coords.append([G.nodes[node]['y'], G.nodes[node]['x']])
+        else:
+            prev_node = route[i - 1]
+            # Get edge geometry if available
+            edge_data = G[prev_node][node]
+            # Pick the first edge key (usually 0)
+            edge = edge_data[0] if 0 in edge_data else edge_data[list(edge_data.keys())[0]]
+            if 'geometry' in edge:
+                # Use the actual road curve geometry
+                geom = edge['geometry']
+                # geom.coords gives (lon, lat) pairs — flip to [lat, lon]
+                pts = list(geom.coords)
+                # Skip first point (already added as prev node)
+                for lon, lat in pts[1:]:
+                    coords.append([lat, lon])
+            else:
+                # No geometry — straight line to next node
+                coords.append([G.nodes[node]['y'], G.nodes[node]['x']])
     return coords
 
 def _reconstruct_path(prev, origin, destination):
@@ -594,10 +625,12 @@ async def calculate_route(request: RouteRequest):
     try:
         logger.info(f"📍 Route request: ({request.startLat}, {request.startLon}) → ({request.endLat}, {request.endLon})")
         
-
         origin = ox.nearest_nodes(G, request.startLon, request.startLat)
         destination = ox.nearest_nodes(G, request.endLon, request.endLat)
-        
+
+        # Get the actual snapped lat/lon so the frontend can move markers
+        snapped_start = { "lat": G.nodes[origin]["y"],      "lon": G.nodes[origin]["x"] }
+        snapped_end   = { "lat": G.nodes[destination]["y"], "lon": G.nodes[destination]["x"] }
 
         dijkstra_result = calculate_dijkstra(origin, destination)
         astar_result = calculate_astar(origin, destination)
@@ -624,6 +657,8 @@ async def calculate_route(request: RouteRequest):
             "dijkstra": dijkstra_result,
             "astar": astar_result,
             "hybrid": hybrid_result,
+            "snappedStart": snapped_start,
+            "snappedEnd": snapped_end,
             "metadata": {
                 "graph_nodes": G.number_of_nodes(),
                 "graph_edges": G.number_of_edges()

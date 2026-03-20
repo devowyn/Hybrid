@@ -207,9 +207,17 @@ async function calculateRoute() {
         const data = await response.json();
         console.log('✅ Response received:', data);
 
-        // Check for errors
+// Check for errors
         if (!response.ok) {
             throw new Error(data.error || data.detail || 'Failed to calculate route');
+        }
+
+        // Snap A and B markers to exact OSM nodes the algorithm used
+        if (data.snappedStart) {
+            setStartLocation(data.snappedStart.lat, data.snappedStart.lon);
+        }
+        if (data.snappedEnd) {
+            setEndLocation(data.snappedEnd.lat, data.snappedEnd.lon);
         }
 
         // Display results
@@ -480,10 +488,10 @@ function buildRouteVisualization(dijkstra, astar, hybrid, dCoords, aCoords, hCoo
     drawRoadNetwork(ctx, W, H, px);
 
     // ── Draw routes (Dijkstra bottom, A* middle, Hybrid top) ─
-    const routeDefs = [
-        { coords: dCoords, color: COLORS.dijkstra, width: 5 },
-        { coords: aCoords, color: COLORS.astar,    width: 5 },
-        { coords: hCoords, color: COLORS.hybrid,   width: 6 }
+const routeDefs = [
+        { coords: hCoords, color: COLORS.hybrid,   width: 12 }, // yellow widest, bottom
+        { coords: aCoords, color: COLORS.astar,    width: 7  }, // cyan middle
+        { coords: dCoords, color: COLORS.dijkstra, width: 3  }  // red thinnest, top
     ];
 
     routeDefs.forEach(({ coords, color, width }) => {
@@ -948,13 +956,13 @@ function drawMapRoutes(routes) {
     // Fix: Draw Dijkstra as a wide semi-transparent base, A* as dashed,
     // and Hybrid as a thin solid line on top — all three always visible.
     const routeConfigs = [
-        // Dijkstra — wide, semi-transparent base so Hybrid shows on top
+        // Dijkstra — wide red, bottom
         { coords: routes.dijkstra, color: COLORS.dijkstra,
-          weight: 10, opacity: 0.45, zIndex: 1, dashed: false },
-        // A* — medium dashed so it stands out from the solid lines
+          weight: 14, opacity: 0.85, zIndex: 1, dashed: false },
+        // A* — cyan, medium, middle (visible on edges of red)
         { coords: routes.astar,    color: COLORS.astar,
-          weight: 5,  opacity: 0.9,  zIndex: 2, dashed: true  },
-        // Hybrid — thin solid line on very top, always visible
+          weight: 9,  opacity: 1.0,  zIndex: 2, dashed: false },
+        // Hybrid — yellow, thinnest, top (always visible)
         { coords: routes.hybrid,   color: COLORS.hybrid,
           weight: 4,  opacity: 1.0,  zIndex: 3, dashed: false }
     ];
