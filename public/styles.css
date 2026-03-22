@@ -255,14 +255,14 @@ body {
 /* Chart Grid Layouts */
 .charts-top {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 16px;
     margin-bottom: 20px;
 }
 
 .charts-bottom {
     display: grid;
-    grid-template-columns: 1.5fr 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 16px;
     margin-bottom: 20px;
 }
@@ -380,7 +380,7 @@ body {
     }
 
     .charts-bottom {
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
     }
     
     .chart-box {
