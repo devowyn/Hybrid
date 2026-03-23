@@ -37,14 +37,14 @@ let roadNetworkEdges = null;
 function initMap() {
     // Map bounds for Tramcoville and Aurora Hill area
     const bounds = new google.maps.LatLngBounds(
-        { lat: 16.421226808151626, lng: 120.58993396277761 }, // Southwest
-        { lat: 16.430451591739512, lng: 120.60680483368087 }  // Northeast
+        { lat: 16.418, lng: 120.585 }, // Southwest
+        { lat: 16.435, lng: 120.610 }  // Northeast
     );
 
     // Create map
     map = new google.maps.Map(document.getElementById('map'), {
         mapTypeId: 'roadmap',
-        minZoom: 1,
+        minZoom: 10,
         maxZoom: 50
     });
 
