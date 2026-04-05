@@ -20,7 +20,7 @@ const COLORS = {
 };
 
 // Python backend URL
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = 'http://localhost:8001';
 
 // Cached road network edges (fetched once from backend)
 let roadNetworkEdges = null;
@@ -297,7 +297,14 @@ function updateSummaryBox(dijkstra, astar, hybrid) {
     const dDist = parseFloat(dijkstra.distanceKm);
     const aDist = parseFloat(astar.distanceKm);
     const hDist = parseFloat(hybrid.distanceKm);
-    const bestDist = Math.min(dDist, aDist, hDist).toFixed(4);
+    const bestDist = Math.min(dDist, aDist, hDist);
+
+    // Collect all algorithm names that share the best distance (within 0.0001 km tolerance)
+    const winners = [];
+    if (Math.abs(dDist - bestDist) < 0.0001) winners.push('Dijkstra');
+    if (Math.abs(aDist - bestDist) < 0.0001) winners.push('A*');
+    if (Math.abs(hDist - bestDist) < 0.0001) winners.push('Hybrid');
+    const winnerLabel = winners.join(' & ');
 
     document.getElementById('summDijkstra').innerHTML = `
         <strong>Dijkstra:</strong>
@@ -318,7 +325,7 @@ function updateSummaryBox(dijkstra, astar, hybrid) {
     `;
 
     document.getElementById('summBest').innerHTML = `
-        Best Distance: ${bestDist} km
+        Best Distance: ${bestDist.toFixed(4)} km (${winnerLabel})
     `;
 }
 
